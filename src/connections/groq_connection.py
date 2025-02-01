@@ -49,17 +49,7 @@ class BasicToolNode:
                 tool_call["args"]
             )
             
-            # If the tool result is a list of search results, format them properly
-            if isinstance(tool_result, list) and tool_call["name"] == "tavily_search_results":
-                formatted_results = []
-                formatted_results.append("\nSearch Results Found:")
-                for idx, result in enumerate(tool_result, 1):
-                    formatted_results.append(f"\n=== Result {idx} ===")
-                    formatted_results.append(f"Source URL: {result['url']}")
-                    formatted_results.append(f"Content: {result['content']}\n")
-                tool_content = "\n".join(formatted_results)
-            else:
-                tool_content = json.dumps(tool_result)
+            tool_content = json.dumps(tool_result)
                 
             outputs.append(
                 ToolMessage(
