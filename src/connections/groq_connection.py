@@ -9,6 +9,8 @@ from langchain_core.messages import ToolMessage
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
+from langgraph.checkpoint.memory import MemorySaver
+
 import json
 from src.connections.base_connection import BaseConnection, Action, ActionParameter
 
@@ -64,9 +66,11 @@ class GroqConnection(BaseConnection):
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
         self._client = None
-        self.message_history: List[Dict[str, Any]] = []
+        self.system_prompt = None
         self.register_actions()
         self.setup_tools()
+        # Initialize MemorySaver
+        self.memory = MemorySaver()
         self.graph = self._create_conversation_graph()
 
     def setup_tools(self):
@@ -77,6 +81,7 @@ class GroqConnection(BaseConnection):
             logger.info(f"Initializing Tavily search with max_results: {max_results}")
             self.search_tool = TavilySearchResults(max_results=max_results)
             self.tools.append(self.search_tool)
+
 
     def _create_conversation_graph(self) -> StateGraph:
         """Create the conversation flow graph"""
@@ -91,7 +96,7 @@ class GroqConnection(BaseConnection):
             if tool_messages:
                 context = "\n\nI found multiple relevant sources:\n" + "\n".join(
                     [msg.content for msg in tool_messages]
-                ) + "\n\nPlease consider all these sources in your response and mention all relevant URLs found."
+                ) + "\n\nPlease consider all these sources in your response."
                 
                 # Add context to the last user message
                 for i in reversed(range(len(messages))):
@@ -100,7 +105,9 @@ class GroqConnection(BaseConnection):
                         break
             
             llm_with_tools = llm.bind_tools(self.tools)
-            return {"messages": [llm_with_tools.invoke(messages)]}
+            response = llm_with_tools.invoke(messages)
+            
+            return {"messages": [response]}
 
         def route_tools(state: State):
             """Route based on whether tools are needed"""
@@ -132,7 +139,9 @@ class GroqConnection(BaseConnection):
         )
         graph_builder.add_edge("tools", "chatbot")
         
-        return graph_builder.compile()
+        # Compile graph with memory checkpointer
+        return graph_builder.compile(checkpointer=self.memory)
+
 
     @property
     def is_llm_provider(self) -> bool:
@@ -270,46 +279,48 @@ class GroqConnection(BaseConnection):
         stream: bool = True,
         **kwargs
     ) -> str:
-        """Generate text using Groq models with LangGraph integration"""
         try:
-            # Initialize state
+            # Store or update system prompt if it's new
+            if not self.system_prompt:
+                self.system_prompt = system_prompt
+            
+            # Convert message history to the format expected by LangGraph
+            messages = []
+            
+            # Always include system prompt at the start
+            messages.append(SystemMessage(content=self.system_prompt))
+
+            # Add the current prompt
+            messages.append(HumanMessage(content=prompt))
+            
+            # Initialize state with conversation history
             initial_state = {
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
+                "messages": messages,
                 "context": {}
             }
             
-            # Process through graph
-            response_stream = self.graph.stream(initial_state)
+            # Process through graph with thread_id for memory persistence
+            config = {"configurable": {"thread_id": str(id(self))}}
+            response_stream = self.graph.stream(
+                initial_state,
+                config,
+                stream_mode="values"
+            )
             
             collected_response = []
             for event in response_stream:
-                for value in event.values():
-                    if "messages" in value and value["messages"]:
-                        message = value["messages"][-1]
+                if "messages" in event:
+                    message = event["messages"][-1]
+                    if isinstance(message, A(IMessage, ToolMessage)):
                         collected_response.append(message.content)
             
             generated_text = "\n".join(collected_response)
-            
-            # Update message history
-            self.message_history.append({
-                "role": "user",
-                "content": prompt
-            })
-            
-            self.message_history.append({
-                "role": "assistant",
-                "content": generated_text
-            })
 
             return generated_text
             
         except Exception as e:
             logger.error(f"Generation error: {str(e)}")
             raise GroqAPIError(f"Text generation failed: {str(e)}")
-
 
     def check_model(self, model: str, **kwargs) -> bool:
         """Check if a specific model is available"""
@@ -391,11 +402,3 @@ class GroqConnection(BaseConnection):
         method_name = action_name.replace('-', '_')
         method = getattr(self, method_name)
         return method(**kwargs)
-
-    def clear_history(self) -> None:
-        """Clear the message history"""
-        self.message_history = []
-
-    def get_history(self) -> List[Dict[str, Any]]:
-        """Get the message history"""
-        return self.message_history
