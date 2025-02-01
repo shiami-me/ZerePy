@@ -73,7 +73,7 @@ class BrowserUseConnection(BaseConnection):
                 return True
 
         logger.info("\n📝 To get your API credentials:")
-        logger.info("Gemini: https://makersuite.google.com/app/apikey")
+        logger.info("Gemini: https://aistudio.google.com/app/apikey")
         
         gemini_api_key = input("\nEnter your Gemini API key: ")
 
