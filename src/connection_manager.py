@@ -2,6 +2,7 @@ import logging
 from typing import Any, List, Optional, Type, Dict
 from src.connections.base_connection import BaseConnection
 from src.connections.anthropic_connection import AnthropicConnection
+from src.connections.browser_use_connection import BrowserUseConnection
 from src.connections.eternalai_connection import EternalAIConnection
 from src.connections.goat_connection import GoatConnection
 from src.connections.groq_connection import GroqConnection
@@ -34,6 +35,8 @@ class ConnectionManager:
             return TwitterConnection
         elif class_name == "anthropic":
             return AnthropicConnection
+        elif class_name == "browser_use":
+            return BrowserUseConnection
         elif class_name == "openai":
             return OpenAIConnection
         elif class_name == "farcaster":
