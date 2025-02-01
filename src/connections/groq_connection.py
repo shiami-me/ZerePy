@@ -76,8 +76,8 @@ class GroqConnection(BaseConnection):
     def setup_tools(self):
         """Initialize tools for the connection"""
         self.tools = []
+        load_dotenv()                                      
         if self.config.get("tavily", False) and os.getenv('TAVILY_API_KEY'):
-            load_dotenv()                                            
             max_results = self.config.get("max_tavily_results", 2)
             logger.info(f"Initializing Tavily search with max_results: {max_results}")
             self.search_tool = TavilySearchResults(api_key=os.getenv('TAVILY_API_KEY'), max_results=max_results)
