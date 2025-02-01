@@ -76,10 +76,11 @@ class GroqConnection(BaseConnection):
     def setup_tools(self):
         """Initialize tools for the connection"""
         self.tools = []
-        if self.config.get("tavily", False):
+        if self.config.get("tavily", False) and os.getenv('TAVILY_API_KEY'):
+            load_dotenv()                                            
             max_results = self.config.get("max_tavily_results", 2)
             logger.info(f"Initializing Tavily search with max_results: {max_results}")
-            self.search_tool = TavilySearchResults(max_results=max_results)
+            self.search_tool = TavilySearchResults(api_key=os.getenv('TAVILY_API_KEY'), max_results=max_results)
             self.tools.append(self.search_tool)
 
 
@@ -224,7 +225,7 @@ class GroqConnection(BaseConnection):
         tavily_api_key = None
         if self.config.get("tavily", False):
             logger.info("Tavily: https://tavily.com")
-            tavily_api_key = input("Enter your Tavily API key: ")
+            tavily_api_key = os.getenv('TAVILY_API_KEY')
 
         try:
             if not os.path.exists('.env'):
@@ -232,10 +233,6 @@ class GroqConnection(BaseConnection):
                     f.write('')
 
             set_key('.env', 'GROQ_API_KEY', groq_api_key)
-            
-            # Only set Tavily key if it was collected
-            if tavily_api_key:
-                set_key('.env', 'TAVILY_API_KEY', tavily_api_key)
             
             # Validate the API keys
             self._client = None  # Reset client
@@ -258,7 +255,8 @@ class GroqConnection(BaseConnection):
         try:
             load_dotenv()
             api_key = os.getenv('GROQ_API_KEY')
-            if not api_key:
+            tavily_api_key = os.getenv('TAVILY_API_KEY')
+            if not api_key or not tavily_api_key:
                 return False
 
             # Try to initialize client
