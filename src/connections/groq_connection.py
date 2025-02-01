@@ -311,7 +311,7 @@ class GroqConnection(BaseConnection):
             for event in response_stream:
                 if "messages" in event:
                     message = event["messages"][-1]
-                    if isinstance(message, A(IMessage, ToolMessage)):
+                    if isinstance(message, (AIMessage, ToolMessage)):
                         collected_response.append(message.content)
             
             generated_text = "\n".join(collected_response)
