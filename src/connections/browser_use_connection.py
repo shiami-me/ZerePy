@@ -150,12 +150,12 @@ class BrowserUseConnection(BaseConnection):
         try:
             method_name = action_name.replace("-", "_")
             method = getattr(self, method_name)
-            return method(**kwargs)
+            return asyncio.run(method(**kwargs))
         except Exception as e:
             logger.error(f"Action '{action_name}' failed: {str(e)}")
             raise BrowserAPIError(f"Action execution failed: {str(e)}")
 
-    def browse(self, task: str) -> Dict[str, Any]:
+    async def browse(self, task: str) -> Dict[str, Any]:
         """Execute a browsing task using the agent"""
         if not self.is_configured():
             raise BrowserConfigurationError("Browser agent is not configured")
@@ -177,7 +177,8 @@ class BrowserUseConnection(BaseConnection):
                 llm = self._client,
                 browser = self._browser
             )
-            result = asyncio.run(self._agent.run())
+            result = await self._agent.run()
+            await self._browser.close()
             return {
                 "status": "success",
                 "result": result
