@@ -10,6 +10,7 @@ from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.memory import MemorySaver
+from src.tools.sonic_tools import SONIC_SYSTEM_PROMPT, get_sonic_tools
 
 import json
 from src.connections.base_connection import BaseConnection, Action, ActionParameter
@@ -76,7 +77,10 @@ class GroqConnection(BaseConnection):
     def setup_tools(self):
         """Initialize tools for the connection"""
         self.tools = []
-        load_dotenv()                                      
+        load_dotenv()
+        if "sonic" in self.config.get("plugins", []):
+            sonic_tools = get_sonic_tools()
+            self.tools.extend(sonic_tools)                             
         if self.config.get("tavily", False) and os.getenv('TAVILY_API_KEY'):
             max_results = self.config.get("max_tavily_results", 2)
             logger.info(f"Initializing Tavily search with max_results: {max_results}")
@@ -278,9 +282,20 @@ class GroqConnection(BaseConnection):
         **kwargs
     ) -> str:
         try:
+            # Combine system prompts if Sonic tools are available
+            has_sonic_tools = any(tool.name.startswith('sonic_') for tool in self.tools)
+            
+            enhanced_system_prompt = system_prompt
+            if has_sonic_tools:
+                enhanced_system_prompt = f"""
+    {system_prompt}
+
+    {SONIC_SYSTEM_PROMPT}
+    """
+            
             # Store or update system prompt if it's new
             if not self.system_prompt:
-                self.system_prompt = system_prompt
+                self.system_prompt = enhanced_system_prompt
             
             # Convert message history to the format expected by LangGraph
             messages = []
@@ -319,6 +334,7 @@ class GroqConnection(BaseConnection):
         except Exception as e:
             logger.error(f"Generation error: {str(e)}")
             raise GroqAPIError(f"Text generation failed: {str(e)}")
+
 
     def check_model(self, model: str, **kwargs) -> bool:
         """Check if a specific model is available"""
