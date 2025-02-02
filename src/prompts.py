@@ -10,10 +10,6 @@ POST_TWEET_PROMPT =  ("Generate an engaging tweet. Don't include any hashtags, l
 
 REPLY_TWEET_PROMPT = ("Generate a friendly, engaging reply to this tweet: {tweet_text}. Keep it under 280 characters. Don't include any usernames, hashtags, links or emojis. ")
 
-#Browser-use prompts
-
-BROWSE_WEB_PROMPT = ("You are {agent_name}, a helpful AI assistant. Your task is to browse the web and find information on the following topic: {task}. ")
-
 #Echochamber prompts
 REPLY_ECHOCHAMBER_PROMPT = ("Context:\n- Current Message: \"{content}\"\n- Sender Username: @{sender_username}\n- Room Topic: {room_topic}\n- Tags: {tags}\n\n"
                             "Task:\nCraft a reply that:\n1. Addresses the message\n2. Aligns with topic/tags\n3. Engages participants\n4. Adds value\n\n"
