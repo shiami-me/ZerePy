@@ -391,19 +391,19 @@ files = [
 
 [[package]]
 name = "beautifulsoup4"
-version = "4.13.0"
+version = "4.13.1"
 description = "Screen-scraping library"
 optional = false
-python-versions = ">=3.6.0"
+python-versions = ">=3.7.0"
 groups = ["main"]
 files = [
-    {file = "beautifulsoup4-4.13.0-py3-none-any.whl", hash = "sha256:9c4c3dfa67aba55f6cd03769c441b21e6a369797fd6766e4b4c6b3399aae2735"},
-    {file = "beautifulsoup4-4.13.0.tar.gz", hash = "sha256:b6e5afb3a2b1472c8db751a92eabf7834e5c7099f990c5e4b35f1f16b60bae64"},
+    {file = "beautifulsoup4-4.13.1-py3-none-any.whl", hash = "sha256:72465267014897bb10ca749bb632bde6c2d20f3254afd5458544bd74e6c2e6d8"},
+    {file = "beautifulsoup4-4.13.1.tar.gz", hash = "sha256:741c8b6903a1e4ae8ba32b9c9ae7510dab7a197fdbadcf9fcdeb0891ef5ec66a"},
 ]
 
 [package.dependencies]
 soupsieve = ">1.2"
-typing-extensions = "*"
+typing-extensions = ">=4.0.0"
 
 [package.extras]
 cchardet = ["cchardet"]
@@ -2752,14 +2752,14 @@ langsmith-pyo3 = ["langsmith-pyo3 (>=0.1.0rc2,<0.2.0)"]
 
 [[package]]
 name = "lmnr"
-version = "0.4.57"
+version = "0.4.58"
 description = "Python SDK for Laminar"
 optional = false
 python-versions = "<4,>=3.9"
 groups = ["main"]
 files = [
-    {file = "lmnr-0.4.57-py3-none-any.whl", hash = "sha256:ab029e4134dc53cd9c2ba05611c6df8817eff7b0697f447c593dcd12afbd7164"},
-    {file = "lmnr-0.4.57.tar.gz", hash = "sha256:ee1f8c9228b082f1303887adbe4e90cbec85504ef5f5d34484cb4962107d068a"},
+    {file = "lmnr-0.4.58-py3-none-any.whl", hash = "sha256:779748efde3777421ea8eded452afaa46d32ba869b378075f31bc2771dcabff7"},
+    {file = "lmnr-0.4.58.tar.gz", hash = "sha256:9fe76c4e4abad73368d56702e2a20a149113d9f5f55ddd82febb066c84d5799e"},
 ]
 
 [package.dependencies]
@@ -2769,7 +2769,7 @@ grpcio = "<1.68.0"
 opentelemetry-api = ">=1.28.0"
 opentelemetry-exporter-otlp-proto-grpc = ">=1.28.0"
 opentelemetry-exporter-otlp-proto-http = ">=1.28.0"
-opentelemetry-instrumentation-langchain = {version = ">=0.36.1", optional = true, markers = "extra == \"langchain\""}
+opentelemetry-instrumentation-langchain = {version = ">=0.37.1", optional = true, markers = "extra == \"langchain\""}
 opentelemetry-instrumentation-requests = ">=0.50b0"
 opentelemetry-instrumentation-sqlalchemy = ">=0.50b0"
 opentelemetry-instrumentation-threading = ">=0.50b0"
@@ -2783,32 +2783,32 @@ tenacity = ">=8.0"
 tqdm = ">=4.0"
 
 [package.extras]
-alephalpha = ["opentelemetry-instrumentation-alephalpha (>=0.36.1)"]
-all = ["opentelemetry-instrumentation-alephalpha (>=0.36.1)", "opentelemetry-instrumentation-anthropic (>=0.36.1)", "opentelemetry-instrumentation-bedrock (>=0.36.1)", "opentelemetry-instrumentation-chromadb (>=0.36.1)", "opentelemetry-instrumentation-cohere (>=0.36.1)", "opentelemetry-instrumentation-google-generativeai (>=0.36.1)", "opentelemetry-instrumentation-groq (>=0.36.1)", "opentelemetry-instrumentation-haystack (>=0.36.1)", "opentelemetry-instrumentation-lancedb (>=0.36.1)", "opentelemetry-instrumentation-langchain (>=0.36.1)", "opentelemetry-instrumentation-llamaindex (>=0.36.1)", "opentelemetry-instrumentation-marqo (>=0.36.1)", "opentelemetry-instrumentation-milvus (>=0.36.1)", "opentelemetry-instrumentation-mistralai (>=0.36.1)", "opentelemetry-instrumentation-ollama (>=0.36.1)", "opentelemetry-instrumentation-openai (>=0.36.1)", "opentelemetry-instrumentation-pinecone (>=0.36.1)", "opentelemetry-instrumentation-qdrant (>=0.36.1)", "opentelemetry-instrumentation-replicate (>=0.36.1)", "opentelemetry-instrumentation-sagemaker (>=0.36.1)", "opentelemetry-instrumentation-together (>=0.36.1)", "opentelemetry-instrumentation-transformers (>=0.36.1)", "opentelemetry-instrumentation-vertexai (>=0.36.1)", "opentelemetry-instrumentation-watsonx (>=0.36.1)", "opentelemetry-instrumentation-weaviate (>=0.36.1)"]
-anthropic = ["opentelemetry-instrumentation-anthropic (>=0.36.1)"]
-bedrock = ["opentelemetry-instrumentation-bedrock (>=0.36.1)"]
-chromadb = ["opentelemetry-instrumentation-chromadb (>=0.36.1)"]
-cohere = ["opentelemetry-instrumentation-cohere (>=0.36.1)"]
-google-generativeai = ["opentelemetry-instrumentation-google-generativeai (>=0.36.1)"]
-groq = ["opentelemetry-instrumentation-groq (>=0.36.1)"]
-haystack = ["opentelemetry-instrumentation-haystack (>=0.36.1)"]
-lancedb = ["opentelemetry-instrumentation-lancedb (>=0.36.1)"]
-langchain = ["opentelemetry-instrumentation-langchain (>=0.36.1)"]
-llamaindex = ["opentelemetry-instrumentation-llamaindex (>=0.36.1)"]
-marqo = ["opentelemetry-instrumentation-marqo (>=0.36.1)"]
-milvus = ["opentelemetry-instrumentation-milvus (>=0.36.1)"]
-mistralai = ["opentelemetry-instrumentation-mistralai (>=0.36.1)"]
-ollama = ["opentelemetry-instrumentation-ollama (>=0.36.1)"]
-openai = ["opentelemetry-instrumentation-openai (>=0.36.1)"]
-pinecone = ["opentelemetry-instrumentation-pinecone (>=0.36.1)"]
-qdrant = ["opentelemetry-instrumentation-qdrant (>=0.36.1)"]
-replicate = ["opentelemetry-instrumentation-replicate (>=0.36.1)"]
-sagemaker = ["opentelemetry-instrumentation-sagemaker (>=0.36.1)"]
-together = ["opentelemetry-instrumentation-together (>=0.36.1)"]
-transformers = ["opentelemetry-instrumentation-transformers (>=0.36.1)"]
-vertexai = ["opentelemetry-instrumentation-vertexai (>=0.36.1)"]
-watsonx = ["opentelemetry-instrumentation-watsonx (>=0.36.1)"]
-weaviate = ["opentelemetry-instrumentation-weaviate (>=0.36.1)"]
+alephalpha = ["opentelemetry-instrumentation-alephalpha (>=0.37.1)"]
+all = ["opentelemetry-instrumentation-alephalpha (>=0.37.1)", "opentelemetry-instrumentation-anthropic (>=0.37.1)", "opentelemetry-instrumentation-bedrock (>=0.37.1)", "opentelemetry-instrumentation-chromadb (>=0.37.1)", "opentelemetry-instrumentation-cohere (>=0.37.1)", "opentelemetry-instrumentation-google-generativeai (>=0.37.1)", "opentelemetry-instrumentation-groq (>=0.37.1)", "opentelemetry-instrumentation-haystack (>=0.37.1)", "opentelemetry-instrumentation-lancedb (>=0.37.1)", "opentelemetry-instrumentation-langchain (>=0.37.1)", "opentelemetry-instrumentation-llamaindex (>=0.37.1)", "opentelemetry-instrumentation-marqo (>=0.37.1)", "opentelemetry-instrumentation-milvus (>=0.37.1)", "opentelemetry-instrumentation-mistralai (>=0.37.1)", "opentelemetry-instrumentation-ollama (>=0.37.1)", "opentelemetry-instrumentation-openai (>=0.37.1)", "opentelemetry-instrumentation-pinecone (>=0.37.1)", "opentelemetry-instrumentation-qdrant (>=0.37.1)", "opentelemetry-instrumentation-replicate (>=0.37.1)", "opentelemetry-instrumentation-sagemaker (>=0.37.1)", "opentelemetry-instrumentation-together (>=0.37.1)", "opentelemetry-instrumentation-transformers (>=0.37.1)", "opentelemetry-instrumentation-vertexai (>=0.37.1)", "opentelemetry-instrumentation-watsonx (>=0.37.1)", "opentelemetry-instrumentation-weaviate (>=0.37.1)"]
+anthropic = ["opentelemetry-instrumentation-anthropic (>=0.37.1)"]
+bedrock = ["opentelemetry-instrumentation-bedrock (>=0.37.1)"]
+chromadb = ["opentelemetry-instrumentation-chromadb (>=0.37.1)"]
+cohere = ["opentelemetry-instrumentation-cohere (>=0.37.1)"]
+google-generativeai = ["opentelemetry-instrumentation-google-generativeai (>=0.37.1)"]
+groq = ["opentelemetry-instrumentation-groq (>=0.37.1)"]
+haystack = ["opentelemetry-instrumentation-haystack (>=0.37.1)"]
+lancedb = ["opentelemetry-instrumentation-lancedb (>=0.37.1)"]
+langchain = ["opentelemetry-instrumentation-langchain (>=0.37.1)"]
+llamaindex = ["opentelemetry-instrumentation-llamaindex (>=0.37.1)"]
+marqo = ["opentelemetry-instrumentation-marqo (>=0.37.1)"]
+milvus = ["opentelemetry-instrumentation-milvus (>=0.37.1)"]
+mistralai = ["opentelemetry-instrumentation-mistralai (>=0.37.1)"]
+ollama = ["opentelemetry-instrumentation-ollama (>=0.37.1)"]
+openai = ["opentelemetry-instrumentation-openai (>=0.37.1)"]
+pinecone = ["opentelemetry-instrumentation-pinecone (>=0.37.1)"]
+qdrant = ["opentelemetry-instrumentation-qdrant (>=0.37.1)"]
+replicate = ["opentelemetry-instrumentation-replicate (>=0.37.1)"]
+sagemaker = ["opentelemetry-instrumentation-sagemaker (>=0.37.1)"]
+together = ["opentelemetry-instrumentation-together (>=0.37.1)"]
+transformers = ["opentelemetry-instrumentation-transformers (>=0.37.1)"]
+vertexai = ["opentelemetry-instrumentation-vertexai (>=0.37.1)"]
+watsonx = ["opentelemetry-instrumentation-watsonx (>=0.37.1)"]
+weaviate = ["opentelemetry-instrumentation-weaviate (>=0.37.1)"]
 
 [[package]]
 name = "lru-dict"
