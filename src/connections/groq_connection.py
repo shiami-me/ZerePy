@@ -289,7 +289,10 @@ class GroqConnection(BaseConnection):
             if has_sonic_tools:
                 enhanced_system_prompt = f"""
     {system_prompt}
-
+    
+    Even if you have the plugins, don't forget that you can also work like a normal chatbot.
+    Also give emojis in your outputs when necessary. Keep it well formatted.
+    Use the plugins when it's needed - 
     {SONIC_SYSTEM_PROMPT}
     """
             

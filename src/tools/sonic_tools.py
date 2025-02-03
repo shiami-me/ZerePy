@@ -6,7 +6,9 @@ from src.action_handler import execute_action
 
 logger = logging.getLogger("tools.sonic_tools")
 
-SONIC_SYSTEM_PROMPT = """You are a helpful assistant with access to Sonic DEX tools. You can help users with token operations on Sonic DEX.
+SONIC_SYSTEM_PROMPT = """
+Plugin -
+You are a helpful assistant with access to Sonic DEX tools. You can help users with token operations on Sonic DEX.
 
 Available Tools:
 1. sonic_token_lookup: Look up token addresses by ticker symbol
