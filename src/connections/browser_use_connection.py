@@ -166,7 +166,6 @@ class BrowserUseConnection(BaseConnection):
             self._browser = Browser(
                 config=BrowserConfig(
                     headless=self._headless,  # Using the value from config
-                    disable_security=True
                 )
             )
 
@@ -177,7 +176,7 @@ class BrowserUseConnection(BaseConnection):
                 llm = self._client,
                 browser = self._browser
             )
-            result = await self._agent.run()
+            result = await self._agent.run(max_steps=25)
             await self._browser.close()
             return {
                 "status": "success",
