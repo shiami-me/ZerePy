@@ -6,7 +6,6 @@ from dotenv import load_dotenv, set_key
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.schema import HumanMessage, SystemMessage, AIMessage
 from langchain_core.messages import ToolMessage
-from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.memory import MemorySaver
@@ -39,30 +38,78 @@ class BasicToolNode:
     """Tool execution node for LangGraph"""
     def __init__(self, tools: list) -> None:
         self.tools_by_name = {tool.name: tool for tool in tools}
+        logger.debug(f"Initialized tools: {list(self.tools_by_name.keys())}")
 
     def __call__(self, inputs: dict):
-        messages = inputs.get("messages", [])
-        if not messages:
-            raise ValueError("No message found in input")
-        
-        message = messages[-1]
-        outputs = []
-        
-        for tool_call in message.tool_calls:
-            tool_result = self.tools_by_name[tool_call["name"]].invoke(
-                tool_call["args"]
-            )
+        try:
+            messages = inputs.get("messages", [])
+            if not messages:
+                raise ValueError("No message found in input")
             
-            tool_content = json.dumps(tool_result)
+            message = messages[-1]
+            outputs = []
+            
+            # Add debugging
+            logger.debug(f"Processing message in BasicToolNode: {message}")
+            
+            # Handle different tool call formats
+            tool_calls = getattr(message, "tool_calls", None)
+            if tool_calls is None and hasattr(message, "additional_kwargs"):
+                tool_calls = message.additional_kwargs.get("tool_calls", [])
+            
+            if not tool_calls:
+                logger.warning("No tool calls found in message")
+                return {"messages": outputs}
+            
+            for tool_call in tool_calls:
+                logger.debug(f"Processing tool call: {tool_call}")
                 
-            outputs.append(
-                ToolMessage(
-                    content=tool_content,
-                    name=tool_call["name"],
-                    tool_call_id=tool_call["id"],
-                )
-            )
-        return {"messages": outputs}
+                # Handle different tool call formats
+                if isinstance(tool_call, dict):
+                    tool_name = tool_call.get("name")
+                    tool_args = tool_call.get("args")
+                    tool_id = tool_call.get("id", "default_id")
+                else:
+                    tool_name = tool_call.name
+                    tool_args = tool_call.args
+                    tool_id = getattr(tool_call, "id", "default_id")
+                
+                if tool_name not in self.tools_by_name:
+                    logger.error(f"Tool not found: {tool_name}")
+                    continue
+                
+                try:
+                    tool_result = self.tools_by_name[tool_name].invoke(tool_args)
+                    logger.debug(f"Tool result: {tool_result}")
+                    
+                    tool_content = (
+                        json.dumps(tool_result) 
+                        if not isinstance(tool_result, str) 
+                        else tool_result
+                    )
+                    
+                    outputs.append(
+                        ToolMessage(
+                            content=tool_content,
+                            name=tool_name,
+                            tool_call_id=tool_id,
+                        )
+                    )
+                except Exception as e:
+                    logger.error(f"Error executing tool {tool_name}: {e}")
+                    outputs.append(
+                        ToolMessage(
+                            content=json.dumps({"error": str(e)}),
+                            name=tool_name,
+                            tool_call_id=tool_id,
+                        )
+                    )
+            
+            return {"messages": outputs}
+            
+        except Exception as e:
+            logger.error(f"Error in BasicToolNode: {e}")
+            raise
 
 class GeminiConnection(BaseConnection):
     def __init__(self, config: Dict[str, Any], agent):
@@ -86,12 +133,7 @@ class GeminiConnection(BaseConnection):
         
         if "image" in self.config.get("plugins", []):
             image_tools = get_together_tools(self._agent)
-            self.tools.extend(image_tools)                      
-        if self.config.get("tavily", False) and os.getenv('TAVILY_API_KEY'):
-            max_results = self.config.get("max_tavily_results", 2)
-            logger.info(f"Initializing Tavily search with max_results: {max_results}")
-            self.search_tool = TavilySearchResults(api_key=os.getenv('TAVILY_API_KEY'), max_results=max_results)
-            self.tools.append(self.search_tool)
+            self.tools.extend(image_tools)
 
     def _create_conversation_graph(self) -> StateGraph:
         """Create the conversation flow graph"""
@@ -123,7 +165,10 @@ class GeminiConnection(BaseConnection):
                         converted_messages[i].content += context
                         break
             
-            llm_with_tools = llm.bind_tools(self.tools)
+            llm_with_tools = llm.bind_tools(
+                tools=self.tools,
+                tool_choice="auto"
+            )
             response = llm_with_tools.invoke(converted_messages)
             
             return {"messages": [response]}
@@ -137,7 +182,12 @@ class GeminiConnection(BaseConnection):
             else:
                 raise ValueError(f"No messages found in input state: {state}")
             
-            if hasattr(ai_message, "tool_calls") and len(ai_message.tool_calls) > 0:
+            tool_calls = getattr(ai_message, "tool_calls", None)
+            if tool_calls is None and hasattr(ai_message, "additional_kwargs"):
+                tool_calls = ai_message.additional_kwargs.get("tool_calls", [])
+            
+            if tool_calls and len(tool_calls) > 0:
+                logger.debug(f"Found tool calls: {tool_calls}")
                 return "tools"
             return END
 
@@ -175,10 +225,6 @@ class GeminiConnection(BaseConnection):
             
         if not isinstance(config["model"], str):
             raise ValueError("model must be a string")
-            
-        # Ensure tavily is boolean if present
-        if "tavily" in config and not isinstance(config["tavily"], bool):
-            raise ValueError("tavily configuration must be a boolean")
                 
         return config
 
@@ -225,7 +271,7 @@ class GeminiConnection(BaseConnection):
         return self._client
 
     def configure(self) -> bool:
-        """Sets up Gemini and Tavily API authentication"""
+        """Sets up Gemini API authentication"""
         logger.info("\n🤖 API SETUP")
 
         if self.is_configured():
@@ -238,12 +284,6 @@ class GeminiConnection(BaseConnection):
         logger.info("Google AI: https://aistudio.google.com/app/apikey")
         
         google_api_key = input("\nEnter your Google API key: ")
-        
-        # Only ask for Tavily if enabled in config
-        tavily_api_key = None
-        if self.config.get("tavily", False):
-            logger.info("Tavily: https://tavily.com")
-            tavily_api_key = os.getenv('TAVILY_API_KEY')
 
         try:
             if not os.path.exists('.env'):
@@ -252,16 +292,12 @@ class GeminiConnection(BaseConnection):
 
             set_key('.env', 'GEMINI_API_KEY', google_api_key)
             
-            # Validate the API keys
+            # Validate the API key
             self._client = None  # Reset client
             self._get_client()
-            
-            # Test Tavily only if enabled
-            if self.config.get("tavily", False) and tavily_api_key:
-                self.search_tool = TavilySearchResults(api_key=tavily_api_key, max_results=self.config.get("max_tavily_results", 2))
 
             logger.info("\n✅ API configuration successfully saved!")
-            logger.info("Your API keys have been stored in the .env file.")
+            logger.info("Your API key has been stored in the .env file.")
             return True
 
         except Exception as e:
@@ -273,8 +309,7 @@ class GeminiConnection(BaseConnection):
         try:
             load_dotenv()
             api_key = os.getenv('GEMINI_API_KEY')
-            tavily_api_key = os.getenv('TAVILY_API_KEY')
-            if not api_key or not tavily_api_key:
+            if not api_key:
                 return False
 
             # Try to initialize client
@@ -296,38 +331,25 @@ class GeminiConnection(BaseConnection):
         **kwargs
     ) -> str:
         try:
-            # Combine system prompts if Sonic tools are available
-            has_sonic_tools = any(tool.name.startswith('sonic_') for tool in self.tools)
-            has_together_tools = any(tool.name.startswith('together_') for tool in self.tools)
-            
-            enhanced_system_prompt = system_prompt
-            if has_sonic_tools:
-                enhanced_system_prompt = f"""
-    {system_prompt}
-    
-    Even if you have the plugins, don't forget that you can also work like a normal chatbot.
-    Also give emojis in your outputs when necessary. Keep it well formatted.
-    Use the plugins when it's needed - 
-    {SONIC_SYSTEM_PROMPT}
-    
-    """
-            if has_together_tools:
-                enhanced_system_prompt = f"""
-    {system_prompt}
+            # Combine all system prompts
+            enhanced_system_prompt = f"""
+{system_prompt}
 
-    Even if you have the plugins, don't forget that you can also work like a normal chatbot.
-    Also give emojis in your outputs when necessary. Keep it well formatted.
-    Use the plugins when it's needed -
-    {TOGETHER_SYSTEM_PROMPT}
+You are a helpful assistant with access to various tools. When using tools:
+1. Don't explain what you're doing, just do it
+2. Don't ask for confirmation, just execute
+3. Don't mention the tool names
+4. Keep responses natural and concise
 
-    """
-            
+{SONIC_SYSTEM_PROMPT if any(tool.name.startswith('sonic_') for tool in self.tools) else ''}
+{TOGETHER_SYSTEM_PROMPT if any(tool.name.startswith('together_') for tool in self.tools) else ''}
+"""
             # Store or update system prompt if it's new
             if not self.system_prompt:
                 self.system_prompt = enhanced_system_prompt
                 
             # Convert system prompt and user prompt into a single human message
-            combined_prompt = f"""System: {self.system_prompt}"""
+            combined_prompt = f"""System: {enhanced_system_prompt}"""
             
             # Convert message history to the format expected by LangGraph
             messages = []

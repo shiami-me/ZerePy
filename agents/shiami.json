@@ -51,8 +51,6 @@
     {
       "name": "gemini",
       "model": "gemini-1.5-flash",
-      "tavily": true,
-      "max_tavily_results": 3,
       "plugins": ["sonic", "image"]
     },
     {
