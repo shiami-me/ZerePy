@@ -9,34 +9,13 @@ from PIL import Image
 import io
 from src.action_handler import execute_action
 
-logger = logging.getLogger(__name__)
-
-TOGETHER_SYSTEM_PROMPT = """
-Plugin -
-You are a helpful assistant to help in image generation.
-You can help users generate images based on their descriptions.
-While using this plugin, just output the image and nothing else.
-Do not output the tool you're using. Always provide the result in a user-friendly way.
-User doesn't know about the tool you're using, so don't mention it.
-Do not ask user anything extra unless they mention it. Directly generate the image.
-
-Available Tool:
-1. together_generate_image: Generate images from text descriptions
-   Example: For "Generate an image of a sunset", use: {"prompt": "A beautiful sunset with orange and purple sky"}
-   Example: For "Create art showing space", use: {"prompt": "A cosmic scene with colorful nebulas and bright stars"}
-   
-Parameters:
-- prompt: Required. Text description of the image to generate
-- width: Optional. Image width (default: 768)
-- height: Optional. Image height (default: 768)
-- steps: Optional. Number of inference steps (default: 4)
-- n: Optional. Number of images to generate (default: 1)
-"""
+logger = logging.getLogger("tools.together_tools")
 
 class TogetherImageGenerationTool(BaseTool):
     name: str = "together_generate_image"
     description: str = """
     Generate images using Together AI's image generation models.
+    Output only the image. Do not output the tool you're using.
     Input should be a JSON string with:
     - prompt: Text description of the image to generate
     - width: (optional) Image width in pixels (default: 768)

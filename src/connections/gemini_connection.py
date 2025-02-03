@@ -1,18 +1,17 @@
 import logging
 import os
-from typing import Dict, Any, List, Optional, Annotated
+from typing import Dict, Any, Annotated
 from typing_extensions import TypedDict
 from dotenv import load_dotenv, set_key
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.schema import HumanMessage, SystemMessage, AIMessage
+from langchain.schema import HumanMessage, AIMessage
 from langchain_core.messages import ToolMessage
-from langgraph.graph import StateGraph, START, END
+from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.memory import MemorySaver
-from src.tools.sonic_tools import SONIC_SYSTEM_PROMPT, get_sonic_tools
-from src.tools.together_tools import TOGETHER_SYSTEM_PROMPT, get_together_tools
-
-import json
+from langgraph.prebuilt import create_react_agent
+from src.tools.sonic_tools import get_sonic_tools
+from src.tools.together_tools import get_together_tools
 from src.connections.base_connection import BaseConnection, Action, ActionParameter
 
 logger = logging.getLogger("connections.gemini_connection")
@@ -34,99 +33,34 @@ class GeminiAPIError(GeminiConnectionError):
     """Raised when Gemini API requests fail"""
     pass
 
-class BasicToolNode:
-    """Tool execution node for LangGraph"""
-    def __init__(self, tools: list) -> None:
-        self.tools_by_name = {tool.name: tool for tool in tools}
-        logger.debug(f"Initialized tools: {list(self.tools_by_name.keys())}")
-
-    def __call__(self, inputs: dict):
-        try:
-            messages = inputs.get("messages", [])
-            if not messages:
-                raise ValueError("No message found in input")
-            
-            message = messages[-1]
-            outputs = []
-            
-            # Add debugging
-            logger.debug(f"Processing message in BasicToolNode: {message}")
-            
-            # Handle different tool call formats
-            tool_calls = getattr(message, "tool_calls", None)
-            if tool_calls is None and hasattr(message, "additional_kwargs"):
-                tool_calls = message.additional_kwargs.get("tool_calls", [])
-            
-            if not tool_calls:
-                logger.warning("No tool calls found in message")
-                return {"messages": outputs}
-            
-            for tool_call in tool_calls:
-                logger.debug(f"Processing tool call: {tool_call}")
-                
-                # Handle different tool call formats
-                if isinstance(tool_call, dict):
-                    tool_name = tool_call.get("name")
-                    tool_args = tool_call.get("args")
-                    tool_id = tool_call.get("id", "default_id")
-                else:
-                    tool_name = tool_call.name
-                    tool_args = tool_call.args
-                    tool_id = getattr(tool_call, "id", "default_id")
-                
-                if tool_name not in self.tools_by_name:
-                    logger.error(f"Tool not found: {tool_name}")
-                    continue
-                
-                try:
-                    tool_result = self.tools_by_name[tool_name].invoke(tool_args)
-                    logger.debug(f"Tool result: {tool_result}")
-                    
-                    tool_content = (
-                        json.dumps(tool_result) 
-                        if not isinstance(tool_result, str) 
-                        else tool_result
-                    )
-                    
-                    outputs.append(
-                        ToolMessage(
-                            content=tool_content,
-                            name=tool_name,
-                            tool_call_id=tool_id,
-                        )
-                    )
-                except Exception as e:
-                    logger.error(f"Error executing tool {tool_name}: {e}")
-                    outputs.append(
-                        ToolMessage(
-                            content=json.dumps({"error": str(e)}),
-                            name=tool_name,
-                            tool_call_id=tool_id,
-                        )
-                    )
-            
-            return {"messages": outputs}
-            
-        except Exception as e:
-            logger.error(f"Error in BasicToolNode: {e}")
-            raise
-
 class GeminiConnection(BaseConnection):
     def __init__(self, config: Dict[str, Any], agent):
         super().__init__(config)
         self._client = None
         self.system_prompt = None
+        self.search_tool = None
         self.register_actions()
         self._agent = agent
         self.setup_tools()
         # Initialize MemorySaver
         self.memory = MemorySaver()
-        self.graph = self._create_conversation_graph()
+        self.agent_executor = self._create_agent()
 
     def setup_tools(self):
         """Initialize tools for the connection"""
         self.tools = []
         load_dotenv()
+        
+        # Setup Tavily if enabled
+        if self.config.get("tavily", False):
+            tavily_api_key = os.getenv('TAVILY_API_KEY')
+            if tavily_api_key:
+                self.search_tool = TavilySearchResults(
+                    api_key=tavily_api_key,
+                    max_results=self.config.get("max_tavily_results", 2)
+                )
+                self.tools.append(self.search_tool)
+        
         if "sonic" in self.config.get("plugins", []):
             sonic_tools = get_sonic_tools()
             self.tools.extend(sonic_tools)       
@@ -135,81 +69,15 @@ class GeminiConnection(BaseConnection):
             image_tools = get_together_tools(self._agent)
             self.tools.extend(image_tools)
 
-    def _create_conversation_graph(self) -> StateGraph:
-        """Create the conversation flow graph"""
-        
-        def chatbot(state: State):
-            """Generate response using Gemini"""
-            llm = self._get_client()
-            messages = state["messages"]
-            
-            # Convert messages to format Gemini expects
-            converted_messages = []
-            for msg in messages:
-                if isinstance(msg, SystemMessage):
-                    # Convert system message to human message
-                    converted_messages.append(HumanMessage(content=f"System: {msg.content}"))
-                elif isinstance(msg, (HumanMessage, AIMessage, ToolMessage)):
-                    converted_messages.append(msg)
-            
-            # If there are tool messages, create a more detailed summary prompt
-            tool_messages = [msg for msg in messages if isinstance(msg, ToolMessage)]
-            if tool_messages:
-                context = "\n\nI found multiple relevant sources:\n" + "\n".join(
-                    [msg.content for msg in tool_messages]
-                ) + "\n\nPlease consider all these sources in your response."
-                
-                # Add context to the last user message
-                for i in reversed(range(len(converted_messages))):
-                    if isinstance(converted_messages[i], HumanMessage):
-                        converted_messages[i].content += context
-                        break
-            
-            llm_with_tools = llm.bind_tools(
-                tools=self.tools,
-                tool_choice="auto"
-            )
-            response = llm_with_tools.invoke(converted_messages)
-            
-            return {"messages": [response]}
-
-        def route_tools(state: State):
-            """Route based on whether tools are needed"""
-            if isinstance(state, list):
-                ai_message = state[-1]
-            elif messages := state.get("messages", []):
-                ai_message = messages[-1]
-            else:
-                raise ValueError(f"No messages found in input state: {state}")
-            
-            tool_calls = getattr(ai_message, "tool_calls", None)
-            if tool_calls is None and hasattr(ai_message, "additional_kwargs"):
-                tool_calls = ai_message.additional_kwargs.get("tool_calls", [])
-            
-            if tool_calls and len(tool_calls) > 0:
-                logger.debug(f"Found tool calls: {tool_calls}")
-                return "tools"
-            return END
-
-        # Create graph
-        graph_builder = StateGraph(State)
-        
-        # Add nodes
-        graph_builder.add_node("chatbot", chatbot)
-        tool_node = BasicToolNode(tools=self.tools)
-        graph_builder.add_node("tools", tool_node)
-        
-        # Add edges
-        graph_builder.add_edge(START, "chatbot")
-        graph_builder.add_conditional_edges(
-            "chatbot",
-            route_tools,
-            {"tools": "tools", END: END}
+    def _create_agent(self):
+        """Create the React agent"""
+        llm = self._get_client()
+        agent_executor = create_react_agent(
+            llm,
+            self.tools,
+            checkpointer=self.memory
         )
-        graph_builder.add_edge("tools", "chatbot")
-        
-        # Compile graph with memory checkpointer
-        return graph_builder.compile(checkpointer=self.memory)
+        return agent_executor
 
     @property
     def is_llm_provider(self) -> bool:
@@ -225,6 +93,10 @@ class GeminiConnection(BaseConnection):
             
         if not isinstance(config["model"], str):
             raise ValueError("model must be a string")
+        
+        # Ensure tavily is boolean if present
+        if "tavily" in config and not isinstance(config["tavily"], bool):
+            raise ValueError("tavily configuration must be a boolean")
                 
         return config
 
@@ -271,7 +143,7 @@ class GeminiConnection(BaseConnection):
         return self._client
 
     def configure(self) -> bool:
-        """Sets up Gemini API authentication"""
+        """Sets up Gemini and Tavily API authentication"""
         logger.info("\n🤖 API SETUP")
 
         if self.is_configured():
@@ -285,19 +157,34 @@ class GeminiConnection(BaseConnection):
         
         google_api_key = input("\nEnter your Google API key: ")
 
+        # Only ask for Tavily if enabled in config
+        tavily_api_key = None
+        if self.config.get("tavily", False):
+            logger.info("Tavily: https://tavily.com")
+            tavily_api_key = input("\nEnter your Tavily API key: ")
+
         try:
             if not os.path.exists('.env'):
                 with open('.env', 'w') as f:
                     f.write('')
 
             set_key('.env', 'GEMINI_API_KEY', google_api_key)
+            if tavily_api_key:
+                set_key('.env', 'TAVILY_API_KEY', tavily_api_key)
             
-            # Validate the API key
+            # Validate the API keys
             self._client = None  # Reset client
             self._get_client()
+            
+            # Test Tavily if enabled
+            if self.config.get("tavily", False) and tavily_api_key:
+                self.search_tool = TavilySearchResults(
+                    api_key=tavily_api_key,
+                    max_results=self.config.get("max_tavily_results", 2)
+                )
 
             logger.info("\n✅ API configuration successfully saved!")
-            logger.info("Your API key has been stored in the .env file.")
+            logger.info("Your API keys have been stored in the .env file.")
             return True
 
         except Exception as e:
@@ -311,6 +198,12 @@ class GeminiConnection(BaseConnection):
             api_key = os.getenv('GEMINI_API_KEY')
             if not api_key:
                 return False
+
+            # Check Tavily if enabled
+            if self.config.get("tavily", False):
+                tavily_api_key = os.getenv('TAVILY_API_KEY')
+                if not tavily_api_key:
+                    return False
 
             # Try to initialize client
             self._client = None  # Reset client
@@ -333,61 +226,55 @@ class GeminiConnection(BaseConnection):
         try:
             # Combine all system prompts
             enhanced_system_prompt = f"""
-{system_prompt}
+    {system_prompt}
 
-You are a helpful assistant with access to various tools. When using tools:
-1. Don't explain what you're doing, just do it
-2. Don't ask for confirmation, just execute
-3. Don't mention the tool names
-4. Keep responses natural and concise
+    You are a helpful assistant with access to various tools. When using tools:
+    1. Don't explain what you're doing, just do it
+    2. Don't ask for confirmation, just execute
+    3. Don't mention the tool names
+    4. Keep responses natural and concise
+    5. Use multiple tools when needed
 
-{SONIC_SYSTEM_PROMPT if any(tool.name.startswith('sonic_') for tool in self.tools) else ''}
-{TOGETHER_SYSTEM_PROMPT if any(tool.name.startswith('together_') for tool in self.tools) else ''}
-"""
+    """
             # Store or update system prompt if it's new
             if not self.system_prompt:
                 self.system_prompt = enhanced_system_prompt
-                
-            # Convert system prompt and user prompt into a single human message
-            combined_prompt = f"""System: {enhanced_system_prompt}"""
-            
-            # Convert message history to the format expected by LangGraph
-            messages = []
-            
-            # Always include system prompt at the start
-            messages.append(SystemMessage(content=combined_prompt))
 
-            # Add the current prompt
-            messages.append(HumanMessage(content=prompt))
-            
+            # Create messages for the agent - using HumanMessage instead of SystemMessage
+            messages = [
+                HumanMessage(content=f"Instructions for you: {enhanced_system_prompt}"),
+                HumanMessage(content=prompt)
+            ]
+
             # Initialize state with conversation history
             initial_state = {
                 "messages": messages,
                 "context": {}
             }
-            
-            # Process through graph with thread_id for memory persistence
+
+            # Process through agent with thread_id for memory persistence
             config = {"configurable": {"thread_id": str(id(self))}}
-            response_stream = self.graph.stream(
-                initial_state,
-                config,
-                stream_mode="values"
-            )
             
             collected_response = []
-            for event in response_stream:
-                if "messages" in event:
-                    message = event["messages"][-1]
-                    if isinstance(message, (AIMessage, ToolMessage)):
-                        collected_response.append(message.content)
-            
-            generated_text = "\n".join(collected_response)
+            for chunk in self.agent_executor.stream(initial_state, config):
+                # Handle both agent and tool messages
+                if isinstance(chunk, dict):
+                    if "agent" in chunk and "messages" in chunk["agent"]:
+                        messages = chunk["agent"]["messages"]
+                        if messages and isinstance(messages[-1], (AIMessage, ToolMessage)):
+                            collected_response.append(messages[-1].content)
+                    elif "tools" in chunk and "messages" in chunk["tools"]:
+                        messages = chunk["tools"]["messages"]
+                        if messages and isinstance(messages[-1], (AIMessage, ToolMessage)):
+                            collected_response.append(messages[-1].content)
 
-            return generated_text
+            return "\n".join(filter(None, collected_response))
             
         except Exception as e:
             logger.error(f"Generation error: {str(e)}")
             raise GeminiAPIError(f"Text generation failed: {str(e)}")
+
+
 
     def check_model(self, model: str, **kwargs) -> bool:
         """Check if a specific model is available"""
