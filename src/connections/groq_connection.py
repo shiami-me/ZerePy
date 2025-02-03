@@ -36,34 +36,83 @@ class GroqAPIError(GroqConnectionError):
     """Raised when Groq API requests fail"""
     pass
 
+
 class BasicToolNode:
     """Tool execution node for LangGraph"""
     def __init__(self, tools: list) -> None:
         self.tools_by_name = {tool.name: tool for tool in tools}
+        logger.debug(f"Initialized tools: {list(self.tools_by_name.keys())}")
 
     def __call__(self, inputs: dict):
-        messages = inputs.get("messages", [])
-        if not messages:
-            raise ValueError("No message found in input")
-        
-        message = messages[-1]
-        outputs = []
-        
-        for tool_call in message.tool_calls:
-            tool_result = self.tools_by_name[tool_call["name"]].invoke(
-                tool_call["args"]
-            )
+        try:
+            messages = inputs.get("messages", [])
+            if not messages:
+                raise ValueError("No message found in input")
             
-            tool_content = json.dumps(tool_result)
+            message = messages[-1]
+            outputs = []
+            
+            # Add debugging
+            logger.debug(f"Processing message in BasicToolNode: {message}")
+            
+            # Handle different tool call formats
+            tool_calls = getattr(message, "tool_calls", None)
+            if tool_calls is None and hasattr(message, "additional_kwargs"):
+                tool_calls = message.additional_kwargs.get("tool_calls", [])
+            
+            if not tool_calls:
+                logger.warning("No tool calls found in message")
+                return {"messages": outputs}
+            
+            for tool_call in tool_calls:
+                logger.debug(f"Processing tool call: {tool_call}")
                 
-            outputs.append(
-                ToolMessage(
-                    content=tool_content,
-                    name=tool_call["name"],
-                    tool_call_id=tool_call["id"],
-                )
-            )
-        return {"messages": outputs}
+                # Handle different tool call formats
+                if isinstance(tool_call, dict):
+                    tool_name = tool_call.get("name")
+                    tool_args = tool_call.get("args")
+                    tool_id = tool_call.get("id", "default_id")
+                else:
+                    tool_name = tool_call.name
+                    tool_args = tool_call.args
+                    tool_id = getattr(tool_call, "id", "default_id")
+                
+                if tool_name not in self.tools_by_name:
+                    logger.error(f"Tool not found: {tool_name}")
+                    continue
+                
+                try:
+                    tool_result = self.tools_by_name[tool_name].invoke(tool_args)
+                    logger.debug(f"Tool result: {tool_result}")
+                    
+                    tool_content = (
+                        json.dumps(tool_result) 
+                        if not isinstance(tool_result, str) 
+                        else tool_result
+                    )
+                    
+                    outputs.append(
+                        ToolMessage(
+                            content=tool_content,
+                            name=tool_name,
+                            tool_call_id=tool_id,
+                        )
+                    )
+                except Exception as e:
+                    logger.error(f"Error executing tool {tool_name}: {e}")
+                    outputs.append(
+                        ToolMessage(
+                            content=json.dumps({"error": str(e)}),
+                            name=tool_name,
+                            tool_call_id=tool_id,
+                        )
+                    )
+            
+            return {"messages": outputs}
+            
+        except Exception as e:
+            logger.error(f"Error in BasicToolNode: {e}")
+            raise
 
 class GroqConnection(BaseConnection):
     def __init__(self, config: Dict[str, Any], agent):
@@ -116,7 +165,10 @@ class GroqConnection(BaseConnection):
                         messages[i].content += context
                         break
             
-            llm_with_tools = llm.bind_tools(self.tools)
+            llm_with_tools = llm.bind_tools(
+                tools=self.tools,
+                tool_choice="auto"
+            )
             response = llm_with_tools.invoke(messages)
             
             return {"messages": [response]}
@@ -130,7 +182,12 @@ class GroqConnection(BaseConnection):
             else:
                 raise ValueError(f"No messages found in input state: {state}")
             
-            if hasattr(ai_message, "tool_calls") and len(ai_message.tool_calls) > 0:
+            tool_calls = getattr(ai_message, "tool_calls", None)
+            if tool_calls is None and hasattr(ai_message, "additional_kwargs"):
+                tool_calls = ai_message.additional_kwargs.get("tool_calls", [])
+            
+            if tool_calls and len(tool_calls) > 0:
+                logger.debug(f"Found tool calls: {tool_calls}")
                 return "tools"
             return END
 
@@ -289,41 +346,31 @@ class GroqConnection(BaseConnection):
         **kwargs
     ) -> str:
         try:
-            # Combine system prompts if Sonic tools are available
-            has_sonic_tools = any(tool.name.startswith('sonic_') for tool in self.tools)
-            has_together_tools = any(tool.name.startswith('together_') for tool in self.tools)
-            
-            enhanced_system_prompt = system_prompt
-            if has_sonic_tools:
-                enhanced_system_prompt = f"""
-    {system_prompt}
-    
-    Even if you have the plugins, don't forget that you can also work like a normal chatbot.
-    Also give emojis in your outputs when necessary. Keep it well formatted.
-    Use the plugins when it's needed - 
-    {SONIC_SYSTEM_PROMPT}
-    
-    """
-            if has_together_tools:
-                enhanced_system_prompt = f"""
-    {system_prompt}
+            # Combine all system prompts
+            enhanced_system_prompt = f"""
+{system_prompt}
 
-    Even if you have the plugins, don't forget that you can also work like a normal chatbot.
-    Also give emojis in your outputs when necessary. Keep it well formatted.
-    Use the plugins when it's needed -
-    {TOGETHER_SYSTEM_PROMPT}
+You are a helpful assistant with access to various tools. When using tools:
+1. Don't explain what you're doing, just do it
+2. Don't ask for confirmation, just execute
+3. Don't mention the tool names
+4. Keep responses natural and concise
 
-    """
-            
+{SONIC_SYSTEM_PROMPT if any(tool.name.startswith('sonic_') for tool in self.tools) else ''}
+{TOGETHER_SYSTEM_PROMPT if any(tool.name.startswith('together_') for tool in self.tools) else ''}
+"""
             # Store or update system prompt if it's new
             if not self.system_prompt:
                 self.system_prompt = enhanced_system_prompt
+                
+            # Convert system prompt and user prompt into a single human message
+            combined_prompt = f"""System: {enhanced_system_prompt}"""
             
             # Convert message history to the format expected by LangGraph
             messages = []
             
             # Always include system prompt at the start
-            messages.append(SystemMessage(content=self.system_prompt))
+            messages.append(SystemMessage(content=enhanced_system_prompt))
 
             # Add the current prompt
             messages.append(HumanMessage(content=prompt))
