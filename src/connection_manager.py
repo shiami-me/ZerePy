@@ -13,6 +13,8 @@ from src.connections.ollama_connection import OllamaConnection
 from src.connections.echochambers_connection import EchochambersConnection
 from src.connections.solana_connection import SolanaConnection
 from src.connections.hyperbolic_connection import HyperbolicConnection
+from src.connections.gemini_connection import GeminiConnection
+from src.connections.together_ai_connection import TogetherAIConnection
 from src.connections.galadriel_connection import GaladrielConnection
 from src.connections.sonic_connection import SonicConnection
 from src.connections.discord_connection import DiscordConnection
@@ -24,8 +26,9 @@ logger = logging.getLogger("connection_manager")
 
 
 class ConnectionManager:
-    def __init__(self, agent_config):
+    def __init__(self, agent, agent_config):
         self.connections: Dict[str, BaseConnection] = {}
+        self.agent = agent
         for config in agent_config:
             self._register_connection(config)
 
@@ -45,6 +48,10 @@ class ConnectionManager:
             return GroqConnection
         elif class_name == "eternalai":
             return EternalAIConnection
+        elif class_name == "together":
+            return TogetherAIConnection
+        elif class_name == "gemini":
+            return GeminiConnection
         elif class_name == "ollama":
             return OllamaConnection
         elif class_name == "echochambers":
@@ -81,7 +88,10 @@ class ConnectionManager:
         try:
             name = config_dic["name"]
             connection_class = self._class_name_to_type(name)
-            connection = connection_class(config_dic)
+            if name == "groq" or name == "gemini":
+                connection = connection_class(config_dic, agent = self.agent)
+            else:
+                connection = connection_class(config_dic)
             self.connections[name] = connection
         except Exception as e:
             logging.error(f"Failed to initialize connection {name}: {e}")

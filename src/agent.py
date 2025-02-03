@@ -11,6 +11,7 @@ from src.action_handler import execute_action
 import src.actions.twitter_actions  
 import src.actions.echochamber_actions
 import src.actions.solana_actions
+import src.actions.together_ai_actions
 from datetime import datetime
 
 REQUIRED_FIELDS = ["name", "bio", "traits", "examples", "loop_delay", "config", "tasks"]
@@ -36,7 +37,7 @@ class ZerePyAgent:
             self.examples = agent_dict["examples"]
             self.example_accounts = agent_dict["example_accounts"]
             self.loop_delay = agent_dict["loop_delay"]
-            self.connection_manager = ConnectionManager(agent_dict["config"])
+            self.connection_manager = ConnectionManager(self, agent_dict["config"])
             self.use_time_based_weights = agent_dict["use_time_based_weights"]
             self.time_based_multipliers = agent_dict["time_based_multipliers"]
 

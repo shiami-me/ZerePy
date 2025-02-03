@@ -1,0 +1,162 @@
+from langchain.tools import BaseTool
+import json
+import logging
+from typing import Optional
+import os
+from datetime import datetime
+import base64
+from PIL import Image
+import io
+from src.action_handler import execute_action
+
+logger = logging.getLogger(__name__)
+
+TOGETHER_SYSTEM_PROMPT = """
+Plugin -
+You are a helpful assistant to help in image generation.
+You can help users generate images based on their descriptions.
+While using this plugin, just output the image and nothing else.
+Do not output the tool you're using. Always provide the result in a user-friendly way.
+User doesn't know about the tool you're using, so don't mention it.
+Do not ask user anything extra unless they mention it. Directly generate the image.
+
+Available Tool:
+1. together_generate_image: Generate images from text descriptions
+   Example: For "Generate an image of a sunset", use: {"prompt": "A beautiful sunset with orange and purple sky"}
+   Example: For "Create art showing space", use: {"prompt": "A cosmic scene with colorful nebulas and bright stars"}
+   
+Parameters:
+- prompt: Required. Text description of the image to generate
+- width: Optional. Image width (default: 768)
+- height: Optional. Image height (default: 768)
+- steps: Optional. Number of inference steps (default: 4)
+- n: Optional. Number of images to generate (default: 1)
+"""
+
+class TogetherImageGenerationTool(BaseTool):
+    name: str = "together_generate_image"
+    description: str = """
+    Generate images using Together AI's image generation models.
+    Input should be a JSON string with:
+    - prompt: Text description of the image to generate
+    - width: (optional) Image width in pixels (default: 768)
+    - height: (optional) Image height in pixels (default: 768)
+    - steps: (optional) Number of inference steps (default: 4)
+    - n: (optional) Number of images to generate (default: 1)
+    
+    Examples:
+    - "Generate a realistic photo of a cat"
+    - "Create digital art of a futuristic city"
+    - "Make an image of mountains at sunset"
+    """
+
+    def __init__(self, agent):
+        super().__init__()
+        self._agent = agent
+
+    def _save_images(self, image_data_list) -> list:
+        """Save generated images and return their paths"""
+        output_dir = "generated_images"
+        os.makedirs(output_dir, exist_ok=True)
+        
+        image_paths = []
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        for idx, image_data in enumerate(image_data_list):
+            try:
+                # Decode base64 image
+                image_bytes = base64.b64decode(image_data)
+                image = Image.open(io.BytesIO(image_bytes))
+                
+                # Save image
+                image_path = os.path.join(output_dir, f"together_ai_{timestamp}_{idx}.png")
+                image.save(image_path)
+                image_paths.append(image_path)
+            except Exception as e:
+                logger.error(f"Failed to save image {idx}: {str(e)}")
+                continue
+                
+        return image_paths
+
+    def _run(
+        self,
+        prompt: str,
+        width: Optional[int] = 768,
+        height: Optional[int] = 768,
+        steps: Optional[int] = 4,
+        n: Optional[int] = 1
+    ) -> str:
+        """
+        Generate images using Together AI
+        
+        Args:
+            prompt (str): Text description of the image to generate
+            width (int, optional): Image width in pixels. Defaults to 768.
+            height (int, optional): Image height in pixels. Defaults to 768.
+            steps (int, optional): Number of inference steps. Defaults to 4.
+            n (int, optional): Number of images to generate. Defaults to 1.
+            
+        Returns:
+            str: JSON string containing status and image paths
+        """
+        try:
+            logger.info(f"Generating image(s) with prompt: {prompt}")
+            
+            # Generate images using execute_action
+            response = execute_action(
+                agent=self._agent,
+                action_name="together-generate-image",
+                prompt = prompt,
+                model = "black-forest-labs/FLUX.1-schnell-Free",
+                width = width,
+                height = height,
+                steps = steps,
+                n = n
+            )
+            logger.info(f"Response: {response}")
+            if not response or "error" in response:
+                raise Exception(response.get("error", "Unknown error occurred"))
+
+            
+            result = {
+                "status": "success",
+                "message": f"Generated {len(response)} image(s)",
+                "image_paths": response,
+                "parameters": {
+                    "prompt": prompt,
+                    "width": width,
+                    "height": height,
+                    "steps": steps,
+                    "n": n
+                }
+            }
+            
+            logger.info(f"Successfully generated {len(response)} image(s)")
+            return json.dumps(result)
+            
+        except Exception as e:
+            error_msg = f"Failed to generate image: {str(e)}"
+            logger.error(error_msg)
+            return json.dumps({
+                "status": "error",
+                "message": error_msg,
+                "parameters": {
+                    "prompt": prompt,
+                    "width": width,
+                    "height": height,
+                    "steps": steps,
+                    "n": n
+                }
+            })
+
+def get_together_tools(agent) -> list:
+    """
+    Initialize and return Together AI tools
+    
+    Args:
+        execute_action: Function to execute actions
+    
+    Returns:
+        list: List of initialized Together AI tools
+    """
+    return [TogetherImageGenerationTool(agent)]

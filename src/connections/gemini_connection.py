@@ -3,7 +3,7 @@ import os
 from typing import Dict, Any, List, Optional, Annotated
 from typing_extensions import TypedDict
 from dotenv import load_dotenv, set_key
-from langchain_groq import ChatGroq
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.schema import HumanMessage, SystemMessage, AIMessage
 from langchain_core.messages import ToolMessage
 from langchain_community.tools.tavily_search import TavilySearchResults
@@ -13,27 +13,26 @@ from langgraph.checkpoint.memory import MemorySaver
 from src.tools.sonic_tools import SONIC_SYSTEM_PROMPT, get_sonic_tools
 from src.tools.together_tools import TOGETHER_SYSTEM_PROMPT, get_together_tools
 
-
 import json
 from src.connections.base_connection import BaseConnection, Action, ActionParameter
 
-logger = logging.getLogger("connections.groq_connection")
+logger = logging.getLogger("connections.gemini_connection")
 
 class State(TypedDict):
     """Type for tracking conversation state"""
     messages: Annotated[list, add_messages]
     context: Dict[str, Any]
 
-class GroqConnectionError(Exception):
-    """Base exception for Groq connection errors"""
+class GeminiConnectionError(Exception):
+    """Base exception for Gemini connection errors"""
     pass
 
-class GroqConfigurationError(GroqConnectionError):
+class GeminiConfigurationError(GeminiConnectionError):
     """Raised when there are configuration/credential issues"""
     pass
 
-class GroqAPIError(GroqConnectionError):
-    """Raised when Groq API requests fail"""
+class GeminiAPIError(GeminiConnectionError):
+    """Raised when Gemini API requests fail"""
     pass
 
 class BasicToolNode:
@@ -65,7 +64,7 @@ class BasicToolNode:
             )
         return {"messages": outputs}
 
-class GroqConnection(BaseConnection):
+class GeminiConnection(BaseConnection):
     def __init__(self, config: Dict[str, Any], agent):
         super().__init__(config)
         self._client = None
@@ -94,14 +93,22 @@ class GroqConnection(BaseConnection):
             self.search_tool = TavilySearchResults(api_key=os.getenv('TAVILY_API_KEY'), max_results=max_results)
             self.tools.append(self.search_tool)
 
-
     def _create_conversation_graph(self) -> StateGraph:
         """Create the conversation flow graph"""
         
         def chatbot(state: State):
-            """Generate response using Groq"""
+            """Generate response using Gemini"""
             llm = self._get_client()
             messages = state["messages"]
+            
+            # Convert messages to format Gemini expects
+            converted_messages = []
+            for msg in messages:
+                if isinstance(msg, SystemMessage):
+                    # Convert system message to human message
+                    converted_messages.append(HumanMessage(content=f"System: {msg.content}"))
+                elif isinstance(msg, (HumanMessage, AIMessage, ToolMessage)):
+                    converted_messages.append(msg)
             
             # If there are tool messages, create a more detailed summary prompt
             tool_messages = [msg for msg in messages if isinstance(msg, ToolMessage)]
@@ -111,13 +118,13 @@ class GroqConnection(BaseConnection):
                 ) + "\n\nPlease consider all these sources in your response."
                 
                 # Add context to the last user message
-                for i in reversed(range(len(messages))):
-                    if isinstance(messages[i], HumanMessage):
-                        messages[i].content += context
+                for i in reversed(range(len(converted_messages))):
+                    if isinstance(converted_messages[i], HumanMessage):
+                        converted_messages[i].content += context
                         break
             
             llm_with_tools = llm.bind_tools(self.tools)
-            response = llm_with_tools.invoke(messages)
+            response = llm_with_tools.invoke(converted_messages)
             
             return {"messages": [response]}
 
@@ -154,13 +161,12 @@ class GroqConnection(BaseConnection):
         # Compile graph with memory checkpointer
         return graph_builder.compile(checkpointer=self.memory)
 
-
     @property
     def is_llm_provider(self) -> bool:
         return True
 
     def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate Groq configuration from JSON"""
+        """Validate Gemini configuration from JSON"""
         required_fields = ["model"]
         missing_fields = [field for field in required_fields if field not in config]
         
@@ -177,7 +183,7 @@ class GroqConnection(BaseConnection):
         return config
 
     def register_actions(self) -> None:
-        """Register available Groq actions"""
+        """Register available Gemini actions"""
         self.actions = {
             "generate-text": Action(
                 name="generate-text",
@@ -185,9 +191,9 @@ class GroqConnection(BaseConnection):
                     ActionParameter("prompt", True, str, "The input prompt for text generation"),
                     ActionParameter("system_prompt", True, str, "System prompt to guide the model"),
                     ActionParameter("model", False, str, "Model to use for generation"),
-                    ActionParameter("temperature", False, float, "A decimal number that determines the degree of randomness in the response.")
+                    ActionParameter("temperature", False, float, "Temperature for generation")
                 ],
-                description="Generate text using Groq models"
+                description="Generate text using Gemini models"
             ),
             "check-model": Action(
                 name="check-model",
@@ -199,26 +205,27 @@ class GroqConnection(BaseConnection):
             "list-models": Action(
                 name="list-models",
                 parameters=[],
-                description="List all available Groq models"
+                description="List all available Gemini models"
             )
         }
 
-    def _get_client(self) -> ChatGroq:
-        """Get or create Groq client"""
+    def _get_client(self) -> ChatGoogleGenerativeAI:
+        """Get or create Gemini client"""
         if not self._client:
-            api_key = os.getenv("GROQ_API_KEY")
+            api_key = os.getenv("GEMINI_API_KEY")
             if not api_key:
-                raise GroqConfigurationError("Groq API key not found in environment")
+                raise GeminiConfigurationError("Google API key not found in environment")
             
-            self._client = ChatGroq(
-                api_key=api_key,
-                model_name=self.config["model"],
-                temperature=self.config.get("temperature", 0.7)
+            self._client = ChatGoogleGenerativeAI(
+                model=self.config["model"],
+                temperature=self.config.get("temperature", 0.7),
+                convert_system_message_to_human=True,
+                google_api_key=api_key
             )
         return self._client
 
     def configure(self) -> bool:
-        """Sets up Groq and Tavily API authentication"""
+        """Sets up Gemini and Tavily API authentication"""
         logger.info("\n🤖 API SETUP")
 
         if self.is_configured():
@@ -228,9 +235,9 @@ class GroqConnection(BaseConnection):
                 return True
 
         logger.info("\n📝 To get your API credentials:")
-        logger.info("Groq: https://console.groq.com")
+        logger.info("Google AI: https://makersuite.google.com/app/apikey")
         
-        groq_api_key = input("\nEnter your Groq API key: ")
+        google_api_key = input("\nEnter your Google API key: ")
         
         # Only ask for Tavily if enabled in config
         tavily_api_key = None
@@ -243,7 +250,7 @@ class GroqConnection(BaseConnection):
                 with open('.env', 'w') as f:
                     f.write('')
 
-            set_key('.env', 'GROQ_API_KEY', groq_api_key)
+            set_key('.env', 'GEMINI_API_KEY', google_api_key)
             
             # Validate the API keys
             self._client = None  # Reset client
@@ -262,10 +269,10 @@ class GroqConnection(BaseConnection):
             return False
 
     def is_configured(self, verbose = False) -> bool:
-        """Check if Groq API key is configured and valid"""
+        """Check if Gemini API key is configured and valid"""
         try:
             load_dotenv()
-            api_key = os.getenv('GROQ_API_KEY')
+            api_key = os.getenv('GEMINI_API_KEY')
             tavily_api_key = os.getenv('TAVILY_API_KEY')
             if not api_key or not tavily_api_key:
                 return False
@@ -318,12 +325,15 @@ class GroqConnection(BaseConnection):
             # Store or update system prompt if it's new
             if not self.system_prompt:
                 self.system_prompt = enhanced_system_prompt
+                
+            # Convert system prompt and user prompt into a single human message
+            combined_prompt = f"""System: {self.system_prompt}"""
             
             # Convert message history to the format expected by LangGraph
             messages = []
             
             # Always include system prompt at the start
-            messages.append(SystemMessage(content=self.system_prompt))
+            messages.append(SystemMessage(content=combined_prompt))
 
             # Add the current prompt
             messages.append(HumanMessage(content=prompt))
@@ -355,60 +365,29 @@ class GroqConnection(BaseConnection):
             
         except Exception as e:
             logger.error(f"Generation error: {str(e)}")
-            raise GroqAPIError(f"Text generation failed: {str(e)}")
-
+            raise GeminiAPIError(f"Text generation failed: {str(e)}")
 
     def check_model(self, model: str, **kwargs) -> bool:
         """Check if a specific model is available"""
         try:
-            # List of supported Groq models
+            # List of supported Gemini models
             supported_models = [
-                "mixtral-8x7b-32768",
-                "distil-whisper-large-v3-en",
-                "gemma2-9b-it",
-                "llama-3.3-70b-versatile",
-                "llama-3.1-8b-instant",
-                "llama-guard-3-8b",
-                "llama3-70b-8192",
-                "llama3-8b-8192",
-                "whisper-large-v3",
-                "whisper-large-v3-turbo",
-                # Preview Models
-                "deepseek-r1-distill-llama-70b",
-                "llama-3.3-70b-specdec",
-                "llama-3.2-1b-preview",
-                "llama-3.2-3b-preview",
-                "llama-3.2-11b-vision-preview",
-                "llama-3.2-90b-vision-preview"
+                "gemini-1.5-pro",
+                "gemini-1.5-flash",
             ]
 
             return model in supported_models
                 
         except Exception as e:
-            raise GroqAPIError(f"Model check failed: {e}")
+            raise GeminiAPIError(f"Model check failed: {e}")
 
     def list_models(self, **kwargs) -> None:
-        """List all available Groq models"""
+        """List all available Gemini models"""
         try:
             # List supported models
             supported_models = [
-                "mixtral-8x7b-32768",
-                "distil-whisper-large-v3-en",
-                "gemma2-9b-it",
-                "llama-3.3-70b-versatile",
-                "llama-3.1-8b-instant",
-                "llama-guard-3-8b",
-                "llama3-70b-8192",
-                "llama3-8b-8192",
-                "whisper-large-v3",
-                "whisper-large-v3-turbo",
-                # Preview Models
-                "deepseek-r1-distill-llama-70b",
-                "llama-3.3-70b-specdec",
-                "llama-3.2-1b-preview",
-                "llama-3.2-3b-preview",
-                "llama-3.2-11b-vision-preview",
-                "llama-3.2-90b-vision-preview"
+                "gemini-1.5-pro",
+                "gemini-1.5-flash",
             ]
 
             logger.info("\nAVAILABLE MODELS:")
@@ -416,10 +395,10 @@ class GroqConnection(BaseConnection):
                 logger.info(f"{i}. {model_id}")
                     
         except Exception as e:
-            raise GroqAPIError(f"Listing models failed: {e}")
+            raise GeminiAPIError(f"Listing models failed: {e}")
     
     def perform_action(self, action_name: str, kwargs) -> Any:
-        """Execute a Groq action with validation"""
+        """Execute a Gemini action with validation"""
         if action_name not in self.actions:
             raise KeyError(f"Unknown action: {action_name}")
 
@@ -427,7 +406,7 @@ class GroqConnection(BaseConnection):
         load_dotenv()
         
         if not self.is_configured(verbose=True):
-            raise GroqConfigurationError("Groq is not properly configured")
+            raise GeminiConfigurationError("Gemini is not properly configured")
 
         action = self.actions[action_name]
         errors = action.validate_params(kwargs)
