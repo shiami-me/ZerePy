@@ -235,7 +235,7 @@ class GeminiConnection(BaseConnection):
                 return True
 
         logger.info("\n📝 To get your API credentials:")
-        logger.info("Google AI: https://makersuite.google.com/app/apikey")
+        logger.info("Google AI: https://aistudio.google.com/app/apikey")
         
         google_api_key = input("\nEnter your Google API key: ")
         
