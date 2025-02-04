@@ -8,7 +8,7 @@ from langchain.schema import HumanMessage, AIMessage
 from langchain_core.messages import ToolMessage
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph.message import add_messages
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.prebuilt import create_react_agent
 from src.tools.sonic_tools import get_sonic_tools
 from src.tools.together_tools import get_together_tools
@@ -43,16 +43,12 @@ class GeminiConnection(BaseConnection):
         self.register_actions()
         self._agent = agent
         self.setup_tools()
-        # Initialize MemorySaver
-        self.memory = MemorySaver()
-        self.agent_executor = self._create_agent()
 
     def setup_tools(self):
         """Initialize tools for the connection"""
         self.tools = []
         load_dotenv()
         
-        # Setup Tavily if enabled
         if self.config.get("tavily", False):
             tavily_api_key = os.getenv('TAVILY_API_KEY')
             if tavily_api_key:
@@ -70,16 +66,6 @@ class GeminiConnection(BaseConnection):
             image_tools = get_together_tools(self._agent)
             self.tools.extend(image_tools)
 
-    def _create_agent(self):
-        """Create the React agent"""
-        llm = self._get_client()
-        agent_executor = create_react_agent(
-            llm,
-            self.tools,
-            checkpointer=self.memory
-        )
-        return agent_executor
-
     @property
     def is_llm_provider(self) -> bool:
         return True
@@ -95,7 +81,6 @@ class GeminiConnection(BaseConnection):
         if not isinstance(config["model"], str):
             raise ValueError("model must be a string")
         
-        # Ensure tavily is boolean if present
         if "tavily" in config and not isinstance(config["tavily"], bool):
             raise ValueError("tavily configuration must be a boolean")
                 
@@ -157,8 +142,8 @@ class GeminiConnection(BaseConnection):
         logger.info("Google AI: https://aistudio.google.com/app/apikey")
         
         google_api_key = input("\nEnter your Google API key: ")
+        postgres_uri = input("\nEnter your PostgreSQL connection URI: ")
 
-        # Only ask for Tavily if enabled in config
         tavily_api_key = None
         if self.config.get("tavily", False):
             logger.info("Tavily: https://tavily.com")
@@ -170,14 +155,17 @@ class GeminiConnection(BaseConnection):
                     f.write('')
 
             set_key('.env', 'GEMINI_API_KEY', google_api_key)
+            set_key('.env', 'POSTGRES_DB_URI', postgres_uri)
             if tavily_api_key:
                 set_key('.env', 'TAVILY_API_KEY', tavily_api_key)
             
-            # Validate the API keys
-            self._client = None  # Reset client
+            # Validate the configurations
+            self._client = None
             self._get_client()
             
-            # Test Tavily if enabled
+            # Reinitialize async components
+            self._initialize_async()
+            
             if self.config.get("tavily", False) and tavily_api_key:
                 self.search_tool = TavilySearchResults(
                     api_key=tavily_api_key,
@@ -193,21 +181,21 @@ class GeminiConnection(BaseConnection):
             return False
 
     def is_configured(self, verbose = False) -> bool:
-        """Check if Gemini API key is configured and valid"""
+        """Check if required API keys and configurations are present"""
         try:
             load_dotenv()
             api_key = os.getenv('GEMINI_API_KEY')
-            if not api_key:
+            db_uri = os.getenv('POSTGRES_DB_URI')
+            
+            if not api_key or not db_uri:
                 return False
 
-            # Check Tavily if enabled
             if self.config.get("tavily", False):
                 tavily_api_key = os.getenv('TAVILY_API_KEY')
                 if not tavily_api_key:
                     return False
 
-            # Try to initialize client
-            self._client = None  # Reset client
+            self._client = None
             self._get_client()
             return True
             
@@ -215,7 +203,7 @@ class GeminiConnection(BaseConnection):
             if verbose:
                 logger.debug(f"Configuration check failed: {e}")
             return False
-        
+
     async def generate_text(
         self,
         prompt: str,
@@ -225,7 +213,6 @@ class GeminiConnection(BaseConnection):
         **kwargs
     ) -> str:
         try:
-            # Combine all system prompts
             enhanced_system_prompt = f"""
     {system_prompt}
 
@@ -234,41 +221,47 @@ class GeminiConnection(BaseConnection):
     2. Don't ask for confirmation, just execute
     3. Don't mention the tool names
     4. Keep responses natural and concise
-    5. Use multiple tools when needed.
+    5. Use multiple tools when needed
     6. When you need some external information or the user asks for it, use Tavily search tool when available.
-
     """
-            # Store or update system prompt if it's new
             if not self.system_prompt:
                 self.system_prompt = enhanced_system_prompt
 
-            # Create messages for the agent - using HumanMessage instead of SystemMessage
             messages = [
                 HumanMessage(content=f"Instructions for you: {enhanced_system_prompt}"),
                 HumanMessage(content=prompt)
             ]
 
-            # Initialize state with conversation history
             initial_state = {
                 "messages": messages,
                 "context": {}
             }
 
-            # Process through agent with thread_id for memory persistence
-            config = {"configurable": {"thread_id": str(id(self))}}
+            config = {"configurable": {"thread_id": "1"}}
             
             collected_response = []
-            async for chunk in self.agent_executor.astream(initial_state, config):
-                # Handle both agent and tool messages
-                if isinstance(chunk, dict):
-                    if "agent" in chunk and "messages" in chunk["agent"]:
-                        messages = chunk["agent"]["messages"]
-                        if messages and isinstance(messages[-1], (AIMessage, ToolMessage)):
-                            collected_response.append(messages[-1].content)
-                    elif "tools" in chunk and "messages" in chunk["tools"]:
-                        messages = chunk["tools"]["messages"]
-                        if messages and isinstance(messages[-1], (AIMessage, ToolMessage)):
-                            collected_response.append(messages[-1].content)
+            db_uri = os.getenv('POSTGRES_DB_URI')
+            if not db_uri:
+                raise GeminiConfigurationError("PostgreSQL connection URI not found in environment")
+            async with AsyncPostgresSaver.from_conn_string(db_uri) as checkpointer:
+                agent = create_react_agent(
+                    self._get_client(),
+                    self.tools,
+                    checkpointer=checkpointer
+                )
+                async for chunk in agent.astream(initial_state, config):
+                    if isinstance(chunk, dict):
+                        if "agent" in chunk and "messages" in chunk["agent"]:
+                            messages = chunk["agent"]["messages"]
+                            if messages and isinstance(messages[-1], (AIMessage, ToolMessage)):
+                                collected_response.append(messages[-1].content)
+                        elif "tools" in chunk and "messages" in chunk["tools"]:
+                            messages = chunk["tools"]["messages"]
+                            if messages and isinstance(messages[-1], (AIMessage, ToolMessage)):
+                                collected_response.append(messages[-1].content)
+                                
+                    checkpoint_tuples = [c async for c in checkpointer.alist(config)]
+                    logger.debug(f"Checkpoint history: {checkpoint_tuples}")
 
             return "\n".join(filter(None, collected_response))
             
@@ -276,17 +269,13 @@ class GeminiConnection(BaseConnection):
             logger.error(f"Generation error: {str(e)}")
             raise GeminiAPIError(f"Text generation failed: {str(e)}")
 
-
-
     async def check_model(self, model: str, **kwargs) -> bool:
         """Check if a specific model is available"""
         try:
-            # List of supported Gemini models
             supported_models = [
                 "gemini-1.5-pro",
                 "gemini-1.5-flash",
             ]
-
             return model in supported_models
                 
         except Exception as e:
@@ -295,7 +284,6 @@ class GeminiConnection(BaseConnection):
     async def list_models(self, **kwargs) -> None:
         """List all available Gemini models"""
         try:
-            # List supported models
             supported_models = [
                 "gemini-1.5-pro",
                 "gemini-1.5-flash",
@@ -307,13 +295,12 @@ class GeminiConnection(BaseConnection):
                     
         except Exception as e:
             raise GeminiAPIError(f"Listing models failed: {e}")
-    
+
     def perform_action(self, action_name: str, kwargs) -> Any:
         """Execute a Gemini action with validation"""
         if action_name not in self.actions:
             raise KeyError(f"Unknown action: {action_name}")
 
-        # Explicitly reload environment variables
         load_dotenv()
         
         if not self.is_configured(verbose=True):
@@ -324,21 +311,16 @@ class GeminiConnection(BaseConnection):
         if errors:
             raise ValueError(f"Invalid parameters: {', '.join(errors)}")
 
-        # Call the appropriate method based on action name
         method_name = action_name.replace('-', '_')
         method = getattr(self, method_name)
         
-        # Get the current event loop or create a new one if there isn't one
         try:
             loop = asyncio.get_event_loop()
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-        # Run the async method in the event loop
         try:
             return loop.run_until_complete(method(**kwargs))
         except Exception as e:
             raise GeminiAPIError(f"Action failed: {str(e)}")
-
-

@@ -1,5 +1,10 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+
+from sqlalchemy.orm import Session
+from src.models.image import GeneratedImage
+from src.database import get_db
 
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -172,6 +177,28 @@ class ZerePyServer:
                 return {"status": "success", "message": "Agent loop stopped"}
             except Exception as e:
                 raise HTTPException(status_code=400, detail=str(e))
+            
+        @self.app.get("/image/{filename}")
+        async def get_image(filename: str, db: Session = Depends(get_db)):
+            # Get image record from database
+            image = db.query(GeneratedImage).filter(GeneratedImage.filename == filename).first()
+            
+            if not image:
+                raise HTTPException(status_code=404, detail="Image not found")
+            
+            # Return the image file
+            return FileResponse(image.file_path)
+        
+        # @self.app.get("/api/images")
+        # async def list_images(
+        #     skip: int = 0, 
+        #     limit: int = 10, 
+        #     db: Session = Depends(get_db)
+        # ):
+        #     """Get list of generated images with their metadata"""
+        #     images = db.query(GeneratedImage).offset(skip).limit(limit).all()
+        #     return images
+        
 
 def create_app():
     server = ZerePyServer()

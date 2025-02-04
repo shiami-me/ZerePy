@@ -7,6 +7,9 @@ import base64
 from PIL import Image
 import io
 from datetime import datetime
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from src.models.image import Base, GeneratedImage
 
 from src.connections.base_connection import BaseConnection, Action, ActionParameter
 
@@ -28,11 +31,24 @@ class TogetherAIConnection(BaseConnection):
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
         self._client = None
+        self._db_engine = None
+        self._Session = None
+        self.setup_database()
         self.register_actions()
 
     @property
     def is_llm_provider(self) -> bool:
         return True
+
+    def setup_database(self):
+        """Initialize database connection"""
+        database_url = os.getenv('POSTGRES_DB_URI')
+        if not database_url:
+            raise TogetherAIConfigurationError("POSTGRES_DB_URI not found in environment")
+        
+        self._db_engine = create_engine(database_url)
+        Base.metadata.create_all(self._db_engine)
+        self._Session = sessionmaker(bind=self._db_engine)
 
     def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Validate Together AI configuration"""
@@ -127,7 +143,7 @@ class TogetherAIConnection(BaseConnection):
         n: int = 1,
         **kwargs
     ) -> List[str]:
-        """Generate images using Together AI"""
+        """Generate images using Together AI and store in database"""
         try:
             client = self._get_client()
             
@@ -142,24 +158,45 @@ class TogetherAIConnection(BaseConnection):
                 update_at="2025-02-03T07:18:13.665Z"
             )
 
-            # Create output directory if it doesn't exist
             output_dir = "generated_images"
             os.makedirs(output_dir, exist_ok=True)
 
             image_paths = []
+            session = self._Session()
             
-            for idx, image_data in enumerate(response.data):
-                # Decode base64 image
-                image_bytes = base64.b64decode(image_data.b64_json)
-                image = Image.open(io.BytesIO(image_bytes))
+            try:
+                for idx, image_data in enumerate(response.data):
+                    # Decode and save image
+                    image_bytes = base64.b64decode(image_data.b64_json)
+                    image = Image.open(io.BytesIO(image_bytes))
+                    
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"together_ai_{timestamp}_{idx}.png"
+                    image_path = os.path.join(output_dir, filename)
+                    image.save(image_path)
+                    
+                    # Create URL path
+                    url_path = f"/image/{filename}"
+                    
+                    # Store in database
+                    db_image = GeneratedImage(
+                        filename=filename,
+                        file_path=image_path,
+                        url_path=url_path,
+                        prompt=prompt,
+                        model=model
+                    )
+                    session.add(db_image)
+                    image_paths.append(url_path)
                 
-                # Save image
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                image_path = os.path.join(output_dir, f"together_ai_{timestamp}_{idx}.png")
-                image.save(image_path)
-                image_paths.append(image_path)
+                session.commit()
+                return image_paths
 
-            return image_paths
+            except Exception as e:
+                session.rollback()
+                raise e
+            finally:
+                session.close()
 
         except Exception as e:
             raise TogetherAIAPIError(f"Image generation failed: {str(e)}")
