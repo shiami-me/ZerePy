@@ -13,6 +13,7 @@ from langgraph.prebuilt import create_react_agent
 from src.tools.sonic_tools import get_sonic_tools
 from src.tools.together_tools import get_together_tools
 from src.connections.base_connection import BaseConnection, Action, ActionParameter
+import asyncio
 
 logger = logging.getLogger("connections.groq_connection")
 
@@ -214,7 +215,7 @@ class GroqConnection(BaseConnection):
                 logger.debug(f"Configuration check failed: {e}")
             return False
         
-    def generate_text(
+    async def generate_text(
         self,
         prompt: str,
         system_prompt: str,
@@ -255,7 +256,7 @@ You are a helpful assistant with access to various tools. When using tools:
             config = {"configurable": {"thread_id": str(id(self))}}
             
             collected_response = []
-            for chunk in self.agent_executor.stream(initial_state, config):
+            for chunk in self.agent_executor.astream(initial_state, config):
                 # Handle both agent and tool messages
                 if isinstance(chunk, dict):
                     if "agent" in chunk and "messages" in chunk["agent"]:
@@ -273,7 +274,7 @@ You are a helpful assistant with access to various tools. When using tools:
             logger.error(f"Generation error: {str(e)}")
             raise GroqAPIError(f"Text generation failed: {str(e)}")
 
-    def check_model(self, model: str, **kwargs) -> bool:
+    async def check_model(self, model: str, **kwargs) -> bool:
         """Check if a specific model is available"""
         try:
             # List of supported Groq models
@@ -299,7 +300,7 @@ You are a helpful assistant with access to various tools. When using tools:
         except Exception as e:
             raise GroqAPIError(f"Model check failed: {e}")
 
-    def list_models(self, **kwargs) -> None:
+    async def list_models(self, **kwargs) -> None:
         """List all available Groq models"""
         try:
             # List supported models
@@ -346,4 +347,18 @@ You are a helpful assistant with access to various tools. When using tools:
         # Call the appropriate method based on action name
         method_name = action_name.replace('-', '_')
         method = getattr(self, method_name)
-        return method(**kwargs)
+                
+        # Get the current event loop or create a new one if there isn't one
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        # Run the async method in the event loop
+        try:
+            return loop.run_until_complete(method(**kwargs))
+        except Exception as e:
+            raise GroqAPIError(f"Action failed: {str(e)}")
+
+
