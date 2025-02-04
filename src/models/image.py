@@ -9,8 +9,7 @@ class GeneratedImage(Base):
     
     id = Column(Integer, primary_key=True)
     filename = Column(String, nullable=False)
-    file_path = Column(String, nullable=False)
-    url_path = Column(String, nullable=False)
+    ipfs_hash=Column(String, nullable=False),
     prompt = Column(String, nullable=False)
     model = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -6,11 +6,12 @@ from together import Together
 import base64
 from PIL import Image
 import io
+import asyncio
 from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from src.models.image import Base, GeneratedImage
-
+from src.helpers.pinata import PinataStorage
 from src.connections.base_connection import BaseConnection, Action, ActionParameter
 
 logger = logging.getLogger("connections.together_ai_connection")
@@ -35,6 +36,7 @@ class TogetherAIConnection(BaseConnection):
         self._Session = None
         self.setup_database()
         self.register_actions()
+        self.pinata = PinataStorage()
 
     @property
     def is_llm_provider(self) -> bool:
@@ -133,7 +135,7 @@ class TogetherAIConnection(BaseConnection):
                 logger.debug(f"Configuration check failed: {e}")
             return False
 
-    def generate_image(
+    async def generate_image(
         self,
         prompt: str,
         model: str = "black-forest-labs/FLUX.1-schnell-Free",
@@ -158,39 +160,29 @@ class TogetherAIConnection(BaseConnection):
                 update_at="2025-02-03T07:18:13.665Z"
             )
 
-            output_dir = "generated_images"
-            os.makedirs(output_dir, exist_ok=True)
-
-            image_paths = []
             session = self._Session()
-            
+            ipfs_hash = None
             try:
                 for idx, image_data in enumerate(response.data):
-                    # Decode and save image
-                    image_bytes = base64.b64decode(image_data.b64_json)
-                    image = Image.open(io.BytesIO(image_bytes))
                     
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     filename = f"together_ai_{timestamp}_{idx}.png"
-                    image_path = os.path.join(output_dir, filename)
-                    image.save(image_path)
-                    
-                    # Create URL path
-                    url_path = f"/image/{filename}"
-                    
+                    result = await self.pinata.pin_image(image_data.b64_json, filename)
+                    logger.info(result)
+                    ipfs_hash = result["IpfsHash"]
                     # Store in database
                     db_image = GeneratedImage(
                         filename=filename,
-                        file_path=image_path,
-                        url_path=url_path,
+                        ipfs_hash=result["IpfsHash"],
                         prompt=prompt,
                         model=model
                     )
                     session.add(db_image)
-                    image_paths.append(url_path)
-                
-                session.commit()
-                return image_paths
+                if ipfs_hash:
+                    session.commit()
+                    return ipfs_hash
+                else:
+                    raise TogetherAIAPIError("Image generation failed: No IPFS hash returned")
 
             except Exception as e:
                 session.rollback()
@@ -217,7 +209,16 @@ class TogetherAIConnection(BaseConnection):
         if errors:
             raise ValueError(f"Invalid parameters: {', '.join(errors)}")
 
-        # Call the appropriate method based on action name
         method_name = action_name.replace('-', '_')
         method = getattr(self, method_name)
-        return method(**kwargs)
+        
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        try:
+            return loop.run_until_complete(method(**kwargs))
+        except Exception as e:
+            raise TogetherAIAPIError(f"Action failed: {str(e)}")

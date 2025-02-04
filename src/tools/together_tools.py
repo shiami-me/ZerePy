@@ -2,14 +2,10 @@ from langchain.tools import BaseTool
 import json
 import logging
 from typing import Optional
-import os
-from datetime import datetime
-import base64
-from PIL import Image
-import io
 from src.action_handler import execute_action
 
 logger = logging.getLogger("tools.together_tools")
+
 
 class TogetherImageGenerationTool(BaseTool):
     name: str = "together_generate_image"
@@ -21,7 +17,6 @@ class TogetherImageGenerationTool(BaseTool):
     - width: (optional) Image width in pixels (default: 768)
     - height: (optional) Image height in pixels (default: 768)
     - steps: (optional) Number of inference steps (default: 4)
-    - n: (optional) Number of images to generate (default: 1)
     
     Examples:
     - "Generate a realistic photo of a cat"
@@ -33,37 +28,12 @@ class TogetherImageGenerationTool(BaseTool):
         super().__init__()
         self._agent = agent
 
-    def _save_images(self, image_data_list) -> list:
-        """Save generated images and return their paths"""
-        output_dir = "generated_images"
-        os.makedirs(output_dir, exist_ok=True)
-        
-        image_paths = []
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        for idx, image_data in enumerate(image_data_list):
-            try:
-                # Decode base64 image
-                image_bytes = base64.b64decode(image_data)
-                image = Image.open(io.BytesIO(image_bytes))
-                
-                # Save image
-                image_path = os.path.join(output_dir, f"together_ai_{timestamp}_{idx}.png")
-                image.save(image_path)
-                image_paths.append(image_path)
-            except Exception as e:
-                logger.error(f"Failed to save image {idx}: {str(e)}")
-                continue
-                
-        return image_paths
-
     def _run(
         self,
         prompt: str,
         width: Optional[int] = 768,
         height: Optional[int] = 768,
         steps: Optional[int] = 4,
-        n: Optional[int] = 1
     ) -> str:
         """
         Generate images using Together AI
@@ -73,7 +43,6 @@ class TogetherImageGenerationTool(BaseTool):
             width (int, optional): Image width in pixels. Defaults to 768.
             height (int, optional): Image height in pixels. Defaults to 768.
             steps (int, optional): Number of inference steps. Defaults to 4.
-            n (int, optional): Number of images to generate. Defaults to 1.
             
         Returns:
             str: JSON string containing status and image paths
@@ -90,7 +59,7 @@ class TogetherImageGenerationTool(BaseTool):
                 width = width,
                 height = height,
                 steps = steps,
-                n = n
+                n = 1
             )
             logger.info(f"Response: {response}")
             if not response or "error" in response:
@@ -99,18 +68,17 @@ class TogetherImageGenerationTool(BaseTool):
             
             result = {
                 "status": "success",
-                "message": f"Generated {len(response)} image(s)",
-                "image_paths": response,
+                "message": f"Generated image",
+                "ipfs_hash": response,
                 "parameters": {
                     "prompt": prompt,
                     "width": width,
                     "height": height,
-                    "steps": steps,
-                    "n": n
+                    "steps": steps
                 }
             }
             
-            logger.info(f"Successfully generated {len(response)} image(s)")
+            logger.info(f"Successfully generated image")
             return json.dumps(result)
             
         except Exception as e:
@@ -123,8 +91,7 @@ class TogetherImageGenerationTool(BaseTool):
                     "prompt": prompt,
                     "width": width,
                     "height": height,
-                    "steps": steps,
-                    "n": n
+                    "steps": steps
                 }
             })
 

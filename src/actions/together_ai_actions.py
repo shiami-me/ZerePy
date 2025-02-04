@@ -29,7 +29,6 @@ def together_generate_image(agent, **kwargs):
         
         if result:
             agent.logger.info("✅ Image generation completed!")
-            agent.logger.info(f"📁 Images saved to: {', '.join(result)}")
         return result
     except Exception as e:
         agent.logger.error(f"❌ Image generation failed: {str(e)}")
