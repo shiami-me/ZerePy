@@ -234,7 +234,8 @@ class GeminiConnection(BaseConnection):
     2. Don't ask for confirmation, just execute
     3. Don't mention the tool names
     4. Keep responses natural and concise
-    5. Use multiple tools when needed
+    5. Use multiple tools when needed.
+    6. When you need some external information or the user asks for it, use Tavily search tool when available.
 
     """
             # Store or update system prompt if it's new
