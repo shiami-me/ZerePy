@@ -115,8 +115,8 @@ class SonicSwapTool(BaseTool):
     - amount: amount to swap
     - slippage: (optional) slippage tolerance (default 0.5%)
     
-    Check the balance before swap.
-    Use sonic_token_lookup for token addresses lookup and pass the ticker like, eg- "Check my S balance" - S is the ticker.
+    Always check the balance before swap.
+    Use sonic_token_lookup for token addresses lookup and pass the ticker like, eg- "Swap 100 S to BTC" - S and BTC is the ticker.
     """
     
     def __init__(self):
