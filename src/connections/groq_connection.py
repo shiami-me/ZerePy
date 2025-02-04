@@ -8,7 +8,7 @@ from langchain.schema import HumanMessage, SystemMessage, AIMessage
 from langchain_core.messages import ToolMessage
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph.message import add_messages
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.prebuilt import create_react_agent
 from src.tools.sonic_tools import get_sonic_tools
 from src.tools.together_tools import get_together_tools
@@ -43,16 +43,12 @@ class GroqConnection(BaseConnection):
         self.register_actions()
         self._agent = agent
         self.setup_tools()
-        # Initialize MemorySaver
-        self.memory = MemorySaver()
-        self.agent_executor = self._create_agent()
 
     def setup_tools(self):
         """Initialize tools for the connection"""
         self.tools = []
         load_dotenv()
         
-        # Setup Tavily if enabled
         if self.config.get("tavily", False):
             tavily_api_key = os.getenv('TAVILY_API_KEY')
             if tavily_api_key:
@@ -69,16 +65,6 @@ class GroqConnection(BaseConnection):
         if "image" in self.config.get("plugins", []):
             image_tools = get_together_tools(self._agent)
             self.tools.extend(image_tools)
-
-    def _create_agent(self):
-        """Create the React agent"""
-        llm = self._get_client()
-        agent_executor = create_react_agent(
-            llm,
-            self.tools,
-            checkpointer=self.memory
-        )
-        return agent_executor
 
     @property
     def is_llm_provider(self) -> bool:
@@ -156,6 +142,7 @@ class GroqConnection(BaseConnection):
         logger.info("Groq: https://console.groq.com")
         
         groq_api_key = input("\nEnter your Groq API key: ")
+        postgres_uri = input("\nEnter your PostgreSQL connection URI: ")
         
         # Only ask for Tavily if enabled in config
         tavily_api_key = None
@@ -169,11 +156,12 @@ class GroqConnection(BaseConnection):
                     f.write('')
 
             set_key('.env', 'GROQ_API_KEY', groq_api_key)
+            set_key('.env', 'POSTGRES_URI', postgres_uri)
             if tavily_api_key:
                 set_key('.env', 'TAVILY_API_KEY', tavily_api_key)
             
-            # Validate the API keys
-            self._client = None  # Reset client
+            # Validate the configurations
+            self._client = None
             self._get_client()
             
             # Test Tavily if enabled
@@ -192,11 +180,13 @@ class GroqConnection(BaseConnection):
             return False
 
     def is_configured(self, verbose = False) -> bool:
-        """Check if Groq API key is configured and valid"""
+        """Check if required API keys and configurations are present"""
         try:
             load_dotenv()
             api_key = os.getenv('GROQ_API_KEY')
-            if not api_key:
+            db_uri = os.getenv('POSTGRES_DB_URI')
+            
+            if not api_key or not db_uri:
                 return False
 
             # Check Tavily if enabled
@@ -205,8 +195,7 @@ class GroqConnection(BaseConnection):
                 if not tavily_api_key:
                     return False
 
-            # Try to initialize client
-            self._client = None  # Reset client
+            self._client = None
             self._get_client()
             return True
             
@@ -254,21 +243,31 @@ You are a helpful assistant with access to various tools. When using tools:
                 "context": {}
             }
 
-            # Process through agent with thread_id for memory persistence
-            config = {"configurable": {"thread_id": str(id(self))}}
+            config = {"configurable": {"thread_id": "1"}}
             
             collected_response = []
-            for chunk in self.agent_executor.astream(initial_state, config):
-                # Handle both agent and tool messages
-                if isinstance(chunk, dict):
-                    if "agent" in chunk and "messages" in chunk["agent"]:
-                        messages = chunk["agent"]["messages"]
-                        if messages and isinstance(messages[-1], (AIMessage, ToolMessage)):
-                            collected_response.append(messages[-1].content)
-                    elif "tools" in chunk and "messages" in chunk["tools"]:
-                        messages = chunk["tools"]["messages"]
-                        if messages and isinstance(messages[-1], (AIMessage, ToolMessage)):
-                            collected_response.append(messages[-1].content)
+            db_uri = os.getenv('POSTGRES_DB_URI')
+            if not db_uri:
+                raise GroqConfigurationError("PostgreSQL connection URI not found in environment")
+            async with AsyncPostgresSaver.from_conn_string(db_uri) as checkpointer:
+                agent = create_react_agent(
+                    self._get_client(),
+                    self.tools,
+                    checkpointer=checkpointer
+                )
+                async for chunk in agent.astream(initial_state, config):
+                    if isinstance(chunk, dict):
+                        if "agent" in chunk and "messages" in chunk["agent"]:
+                            messages = chunk["agent"]["messages"]
+                            if messages and isinstance(messages[-1], (AIMessage, ToolMessage)):
+                                collected_response.append(messages[-1].content)
+                        elif "tools" in chunk and "messages" in chunk["tools"]:
+                            messages = chunk["tools"]["messages"]
+                            if messages and isinstance(messages[-1], (AIMessage, ToolMessage)):
+                                collected_response.append(messages[-1].content)
+                                
+                    checkpoint_tuples = [c async for c in checkpointer.alist(config)]
+                    logger.debug(f"Checkpoint history: {checkpoint_tuples}")
 
             return "\n".join(filter(None, collected_response))
             
@@ -279,7 +278,6 @@ You are a helpful assistant with access to various tools. When using tools:
     async def check_model(self, model: str, **kwargs) -> bool:
         """Check if a specific model is available"""
         try:
-            # List of supported Groq models
             supported_models = [
                 "mixtral-8x7b-32768",
                 "gemma2-9b-it",
@@ -305,7 +303,6 @@ You are a helpful assistant with access to various tools. When using tools:
     async def list_models(self, **kwargs) -> None:
         """List all available Groq models"""
         try:
-            # List supported models
             supported_models = [
                 "mixtral-8x7b-32768",
                 "gemma2-9b-it",
@@ -335,7 +332,6 @@ You are a helpful assistant with access to various tools. When using tools:
         if action_name not in self.actions:
             raise KeyError(f"Unknown action: {action_name}")
 
-        # Explicitly reload environment variables
         load_dotenv()
         
         if not self.is_configured(verbose=True):
@@ -346,18 +342,15 @@ You are a helpful assistant with access to various tools. When using tools:
         if errors:
             raise ValueError(f"Invalid parameters: {', '.join(errors)}")
 
-        # Call the appropriate method based on action name
         method_name = action_name.replace('-', '_')
         method = getattr(self, method_name)
                 
-        # Get the current event loop or create a new one if there isn't one
         try:
             loop = asyncio.get_event_loop()
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-        # Run the async method in the event loop
         try:
             return loop.run_until_complete(method(**kwargs))
         except Exception as e:
