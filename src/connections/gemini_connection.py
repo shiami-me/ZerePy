@@ -163,9 +163,6 @@ class GeminiConnection(BaseConnection):
             self._client = None
             self._get_client()
             
-            # Reinitialize async components
-            self._initialize_async()
-            
             if self.config.get("tavily", False) and tavily_api_key:
                 self.search_tool = TavilySearchResults(
                     api_key=tavily_api_key,
