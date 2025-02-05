@@ -7,11 +7,12 @@ from typing import Dict, Any, Annotated
 from typing_extensions import TypedDict
 from dotenv import load_dotenv, set_key
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.schema import HumanMessage, AIMessage
+from langchain.schema import HumanMessage, AIMessage, SystemMessage
 from langchain_core.messages import ToolMessage
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import create_react_agent
 from src.tools.sonic_tools import get_sonic_tools
 from src.tools.together_tools import get_together_tools
@@ -24,6 +25,92 @@ class State(TypedDict):
     """Type for tracking conversation state"""
     messages: Annotated[list, add_messages]
     context: Dict[str, Any]
+
+class BasicToolNode:
+    """Tool execution node for LangGraph"""
+    def __init__(self, tools: list) -> None:
+        self.tools_by_name = {tool.name: tool for tool in tools}
+        logger.debug(f"Initialized tools: {list(self.tools_by_name.keys())}")
+
+    def __call__(self, inputs: dict):
+        try:
+            messages = inputs.get("messages", [])
+            if not messages:
+                raise ValueError("No message found in input")
+            
+            message = messages[-1]
+            outputs = []
+            
+            # Add debugging
+            logger.debug(f"Processing message in BasicToolNode: {message}")
+            
+            # Handle different tool call formats
+            tool_calls = getattr(message, "tool_calls", None)
+            if tool_calls is None and hasattr(message, "additional_kwargs"):
+                tool_calls = message.additional_kwargs.get("tool_calls", [])
+            
+            if not tool_calls:
+                logger.warning("No tool calls found in message")
+                return {"messages": outputs}
+            
+            for tool_call in tool_calls:
+                logger.debug(f"Processing tool call: {tool_call}")
+                
+                # Handle different tool call formats
+                if isinstance(tool_call, dict):
+                    tool_name = tool_call.get("name")
+                    tool_args = tool_call.get("args")
+                    tool_id = tool_call.get("id", "default_id")
+                else:
+                    tool_name = tool_call.name
+                    tool_args = tool_call.args
+                    tool_id = getattr(tool_call, "id", "default_id")
+                
+                if tool_name not in self.tools_by_name:
+                    logger.error(f"Tool not found: {tool_name}")
+                    continue
+                
+                try:
+                    tool_result = self.tools_by_name[tool_name].invoke(tool_args)
+                    logger.debug(f"Tool result: {tool_result}")
+                    
+                    tool_content = (
+                        json.dumps(tool_result) 
+                        if not isinstance(tool_result, str) 
+                        else tool_result
+                    )
+                    
+                    outputs.append(
+                        ToolMessage(
+                            content=tool_content,
+                            name=tool_name,
+                            tool_call_id=tool_id,
+                        )
+                    )
+                except Exception as e:
+                    logger.error(f"Error executing tool {tool_name}: {e}")
+                    if tool_name == "sonic_request_transaction_data":
+                        outputs.append(
+                            ToolMessage(
+                                content="Waiting for transaction data",
+                                name=tool_name,
+                                tool_call_id=tool_id,
+                            )
+                        )
+                    else:
+                        outputs.append(
+                            ToolMessage(
+                                content=json.dumps({"error": str(e)}),
+                                name=tool_name,
+                                tool_call_id=tool_id,
+                            )
+                        )
+            
+            return {"messages": outputs}
+            
+        except Exception as e:
+            logger.error(f"Error in BasicToolNode: {e}")
+            raise
 
 class GeminiConnectionError(Exception):
     """Base exception for Gemini connection errors"""
@@ -46,6 +133,84 @@ class GeminiConnection(BaseConnection):
         self.register_actions()
         self._agent = agent
         self.setup_tools()
+        self.graph_builder = self._create_conversation_graph()
+        self.checkpointer = None
+
+    
+    def _create_conversation_graph(self) -> StateGraph:
+        """Create the conversation flow graph"""
+        
+        def chatbot(state: State):
+            """Generate response using Gemini"""
+            llm = self._get_client()
+            messages = state["messages"]
+            
+            # Convert messages to format Gemini expects
+            converted_messages = []
+            for msg in messages:
+                if isinstance(msg, SystemMessage):
+                    # Convert system message to human message
+                    converted_messages.append(HumanMessage(content=f"System: {msg.content}"))
+                elif isinstance(msg, (HumanMessage, AIMessage, ToolMessage)):
+                    converted_messages.append(msg)
+            
+            # If there are tool messages, create a more detailed summary prompt
+            tool_messages = [msg for msg in messages if isinstance(msg, ToolMessage)]
+            if tool_messages:
+                context = "\n\nI found multiple relevant sources:\n" + "\n".join(
+                    [msg.content for msg in tool_messages]
+                ) + "\n\nPlease consider all these sources in your response."
+                
+                # Add context to the last user message
+                for i in reversed(range(len(converted_messages))):
+                    if isinstance(converted_messages[i], HumanMessage):
+                        converted_messages[i].content += context
+                        break
+            
+            llm_with_tools = llm.bind_tools(
+                tools=self.tools,
+                tool_choice="auto"
+            )
+            response = llm_with_tools.invoke(converted_messages)
+            
+            return {"messages": [response]}
+
+        def route_tools(state: State):
+            """Route based on whether tools are needed"""
+            if isinstance(state, list):
+                ai_message = state[-1]
+            elif messages := state.get("messages", []):
+                ai_message = messages[-1]
+            else:
+                raise ValueError(f"No messages found in input state: {state}")
+            
+            tool_calls = getattr(ai_message, "tool_calls", None)
+            if tool_calls is None and hasattr(ai_message, "additional_kwargs"):
+                tool_calls = ai_message.additional_kwargs.get("tool_calls", [])
+            
+            if tool_calls and len(tool_calls) > 0:
+                logger.debug(f"Found tool calls: {tool_calls}")
+                return "tools"
+            return END
+
+        # Create graph
+        graph_builder = StateGraph(State)
+        
+        # Add nodes
+        graph_builder.add_node("chatbot", chatbot)
+        tool_node = BasicToolNode(tools=self.tools)
+        graph_builder.add_node("tools", tool_node)
+        
+        # Add edges
+        graph_builder.add_edge(START, "chatbot")
+        graph_builder.add_conditional_edges(
+            "chatbot",
+            route_tools,
+            {"tools": "tools", END: END}
+        )
+        graph_builder.add_edge("tools", "chatbot")
+        return graph_builder
+
 
     def setup_tools(self):
         """Initialize tools for the connection"""
@@ -231,6 +396,12 @@ class GeminiConnection(BaseConnection):
     5. Use multiple tools when needed
     6. When you need some external information or the user asks for it, use Tavily search tool when available.
     7. Use connect wallet address whenever it's needed, for example - for sonic related tools. Ask user to connect wallet if needed(only for sonic related tools except sonic_request_transaction_data).
+    
+    8. For Sonic transfers or swaps:
+       - First execute the transfer/swap operation
+       - Wait for and verify the "status": "complete" response
+       - Only then use sonic_request_transaction_data
+    9. Never execute sonic_request_transaction_data in parallel with other operations.
     """
             if not self.system_prompt:
                 self.system_prompt = enhanced_system_prompt
@@ -245,52 +416,40 @@ class GeminiConnection(BaseConnection):
                 "context": {}
             }
 
-            config = {"configurable": {"thread_id": "10450232231323"}}
+            config = {"configurable": {"thread_id": "232482"}}
             
             collected_response = []
+            logger.info(f"Initial state: {initial_state}")
             db_uri = os.getenv('POSTGRES_DB_URI')
             if not db_uri:
                 raise GeminiConfigurationError("PostgreSQL connection URI not found in environment")
+            # Compile graph with memory checkpointer
             with PostgresSaver.from_conn_string(db_uri) as checkpointer:
                 checkpointer.setup()
-                agent = create_react_agent(
-                    self._get_client(),
-                    self.tools,
-                    checkpointer=checkpointer
+                graph = self.graph_builder.compile(checkpointer=checkpointer)
+                response_stream = graph.stream(
+                    initial_state,
+                    config,
                 )
-                for chunk in agent.stream(initial_state, config):
-                    logger.info(chunk)
+                for checkpoint in checkpointer.list(config):
+                    logger.info(f"Checkpoint: {checkpoint}")
+                for chunk in response_stream:
+                    snapshot = graph.get_state(config)
+                    logger.info(snapshot.next)
+                    logger.info(f"Chunk: {chunk}")
                     if isinstance(chunk, dict):
-                        if "agent" in chunk and "messages" in chunk["agent"]:
-                            messages = chunk["agent"]["messages"]
+                        if "chatbot" in chunk and "messages" in chunk["chatbot"]:
+                            messages = chunk["chatbot"]["messages"]
+                            messages
                             if messages and isinstance(messages[-1], (AIMessage, ToolMessage)):
                                 collected_response.append(messages[-1].content)
                         elif "tools" in chunk and "messages" in chunk["tools"]:
+                            logger.info(f"Tools: {chunk['tools']}")
                             messages = chunk["tools"]["messages"]
-                            if messages and isinstance(messages[-1], (AIMessage, ToolMessage)):
-                                collected_response.append(messages[-1].content)
-                                if isinstance(messages[-1], ToolMessage):
-                                    res = json.loads(messages[-1].content)
-                                    if isinstance(res, dict) and res.get("status") == "interrupt":
-                                        # Generate a unique tool call ID using timestamp and UUID
-                                        tool_call_id = f"tool_{int(time.time())}_{uuid.uuid4().hex[:8]}"
-                                        
-                                        tool_call = AIMessage(
-                                            content="",
-                                            tool_calls=[
-                                                {
-                                                    "name": "sonic_request_transaction_data",
-                                                    "args": {},  # More explicit than empty dict
-                                                    "id": tool_call_id,
-                                                    "type": "tool_call",
-                                                }
-                                            ],
-                                        )
-                                        agent.stream(tool_call, config)
-                                
-                    checkpoint_tuples = [c for c in checkpointer.list(config)]
-                    logger.info(f"Checkpoint history: {checkpoint_tuples}")
-
+                            logger.info(f"Messages: {messages}")
+                            for message in messages:
+                                if isinstance(message, (ToolMessage, AIMessage)):
+                                    collected_response.append(message.content)
             return "\n".join(filter(None, collected_response))
             
         except Exception as e:
@@ -300,19 +459,18 @@ class GeminiConnection(BaseConnection):
         """Continue execution based on provided data"""
         try:
             response_command = Command(resume={"data": data})
-            config = {"configurable": {"thread_id": "10450232231323"}}
+            config = {"configurable": {"thread_id": "232482"}}
             
             db_uri = os.getenv('POSTGRES_DB_URI')
             if not db_uri:
                 raise GeminiConfigurationError("PostgreSQL connection URI not found in environment")
             with PostgresSaver.from_conn_string(db_uri) as checkpointer:
                 checkpointer.setup()
-                agent = create_react_agent(
-                    self._get_client(),
-                    self.tools,
-                    checkpointer=checkpointer
+                graph = self.graph_builder.compile(checkpointer=checkpointer)
+                response_stream = graph.stream(
+                    response_command,
+                    config,
                 )
-                agent.stream(response_command, config)
 
             return data
             
@@ -347,7 +505,8 @@ class GeminiConnection(BaseConnection):
         except Exception as e:
             raise GeminiAPIError(f"Listing models failed: {e}")
         
-    def interrup_chat(self, query: str) -> Any:
+    def interrupt_chat(self, query: str) -> Any:
+        logger.info(query)
         response = interrupt({query: "query"})
         return response["data"]
 

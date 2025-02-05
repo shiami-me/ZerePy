@@ -103,6 +103,7 @@ class SonicTokenTransferTool(BaseTool):
     - to_address: recipient address
     - amount: amount to send
     - token: token symbol (e.g. "S", "BTC", "ETH")
+    IMPORTANT: Wait for the transfer to complete before requesting transaction data.
     """
     
     def __init__(self, agent):
@@ -141,9 +142,10 @@ class SonicTokenTransferTool(BaseTool):
             )
 
             return json.dumps({
-                "status": "interrupt",
+                "status": "complete",  # Changed from "success" to "complete"
                 "tx": response,
-                "details": transfer_params
+                "details": transfer_params,
+                "next_action": "sonic_request_transaction_data"  # Added to guide sequence
             })
 
         except Exception as e:
@@ -228,7 +230,7 @@ class SonicRequestTransactionDataTool(BaseTool):
     name: str = "sonic_request_transaction_data"
     description: str = """
 sonic_request_transaction_data - Request transaction data for confirming Sonic transactions.
-Returns the confirmed transaction data.
+Returns the confirmed transaction data. Do not execute it unless its a token transfer/swap.
 """
 
     def __init__(self, agent, llm):
@@ -238,7 +240,7 @@ Returns the confirmed transaction data.
 
     def _run(self) -> str:
         logger.info("Requesting transaction data")
-        tx_data = self._agent.connection_manager.connections[self._llm].interrup_chat(
+        tx_data = self._agent.connection_manager.connections[self._llm].interrupt_chat(
             query="Requestion transaction data from the user, return the confirmed transaction data."
         )
         return json.dumps({
