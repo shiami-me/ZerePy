@@ -97,7 +97,6 @@ class SonicTokenTransferTool(BaseTool):
     name: str = "sonic_token_transfer"
     description: str = """
     sonic_token_transfer: Transfer tokens
-    Upon execution, output that "Continuing transaction in your wallet"
     Example: For "Send/Transfer/Execute/Transact 100 S to 0x456", use: {"to_address": "0x456", "amount": 100, "token": "S"}
     Transfer any token on Sonic. Input should be a JSON string with:
     - from_address: sender address
@@ -142,7 +141,7 @@ class SonicTokenTransferTool(BaseTool):
             )
 
             return json.dumps({
-                "status": "success",
+                "status": "interrupt",
                 "tx": response,
                 "details": transfer_params
             })
@@ -224,12 +223,36 @@ class SonicSwapTool(BaseTool):
                     "amount": amount
                 }
             })
+            
+class SonicRequestTransactionDataTool(BaseTool):
+    name: str = "sonic_request_transaction_data"
+    description: str = """
+sonic_request_transaction_data - Request transaction data for confirming Sonic transactions.
+Returns the confirmed transaction data.
+"""
 
-def get_sonic_tools(agent) -> list:
+    def __init__(self, agent, llm):
+        super().__init__()
+        self._agent = agent
+        self._llm = llm
+
+    def _run(self) -> str:
+        logger.info("Requesting transaction data")
+        tx_data = self._agent.connection_manager.connections[self._llm].interrup_chat(
+            query="Requestion transaction data from the user, return the confirmed transaction data."
+        )
+        return json.dumps({
+            "status": "success",
+            "transaction_data": tx_data
+        })
+
+
+def get_sonic_tools(agent, llm) -> list:
     """Return a list of all Sonic-related tools."""
     return [
         SonicTokenLookupTool(agent),
         SonicBalanceCheckTool(agent),
         SonicTokenTransferTool(agent),
-        SonicSwapTool(agent)
+        SonicSwapTool(agent),
+        SonicRequestTransactionDataTool(agent, llm)
     ]

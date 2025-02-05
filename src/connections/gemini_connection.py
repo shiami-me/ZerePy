@@ -1,5 +1,8 @@
 import logging
 import os
+import json
+import time
+import uuid
 from typing import Dict, Any, Annotated
 from typing_extensions import TypedDict
 from dotenv import load_dotenv, set_key
@@ -8,12 +11,12 @@ from langchain.schema import HumanMessage, AIMessage
 from langchain_core.messages import ToolMessage
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph.message import add_messages
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.prebuilt import create_react_agent
 from src.tools.sonic_tools import get_sonic_tools
 from src.tools.together_tools import get_together_tools
 from src.connections.base_connection import BaseConnection, Action, ActionParameter
-import asyncio
+from langgraph.types import Command, interrupt
 
 logger = logging.getLogger("connections.gemini_connection")
 
@@ -59,7 +62,7 @@ class GeminiConnection(BaseConnection):
                 self.tools.append(self.search_tool)
         
         if "sonic" in self.config.get("plugins", []):
-            sonic_tools = get_sonic_tools(self._agent)
+            sonic_tools = get_sonic_tools(agent=self._agent, llm="gemini")
             self.tools.extend(sonic_tools)       
         
         if "image" in self.config.get("plugins", []):
@@ -110,6 +113,13 @@ class GeminiConnection(BaseConnection):
                 name="list-models",
                 parameters=[],
                 description="List all available Gemini models"
+            ),
+            "continue-execution": Action(
+                name="continue-execution",
+                parameters=[
+                    ActionParameter("data", True, str, "Data to continue execution")
+                ],
+                description="Continue execution with provided data"
             )
         }
 
@@ -201,7 +211,7 @@ class GeminiConnection(BaseConnection):
                 logger.debug(f"Configuration check failed: {e}")
             return False
 
-    async def generate_text(
+    def generate_text(
         self,
         prompt: str,
         system_prompt: str,
@@ -220,7 +230,7 @@ class GeminiConnection(BaseConnection):
     4. Keep responses natural and concise
     5. Use multiple tools when needed
     6. When you need some external information or the user asks for it, use Tavily search tool when available.
-    7. Use connect wallet address whenever it's needed, for example - for sonic related tools. Ask user to connect wallet if needed(only for sonic related tools).
+    7. Use connect wallet address whenever it's needed, for example - for sonic related tools. Ask user to connect wallet if needed(only for sonic related tools except sonic_request_transaction_data).
     """
             if not self.system_prompt:
                 self.system_prompt = enhanced_system_prompt
@@ -235,20 +245,21 @@ class GeminiConnection(BaseConnection):
                 "context": {}
             }
 
-            config = {"configurable": {"thread_id": "104500"}}
+            config = {"configurable": {"thread_id": "10450232231323"}}
             
             collected_response = []
             db_uri = os.getenv('POSTGRES_DB_URI')
             if not db_uri:
                 raise GeminiConfigurationError("PostgreSQL connection URI not found in environment")
-            async with AsyncPostgresSaver.from_conn_string(db_uri) as checkpointer:
-                await checkpointer.setup()
+            with PostgresSaver.from_conn_string(db_uri) as checkpointer:
+                checkpointer.setup()
                 agent = create_react_agent(
                     self._get_client(),
                     self.tools,
                     checkpointer=checkpointer
                 )
-                async for chunk in agent.astream(initial_state, config):
+                for chunk in agent.stream(initial_state, config):
+                    logger.info(chunk)
                     if isinstance(chunk, dict):
                         if "agent" in chunk and "messages" in chunk["agent"]:
                             messages = chunk["agent"]["messages"]
@@ -258,17 +269,58 @@ class GeminiConnection(BaseConnection):
                             messages = chunk["tools"]["messages"]
                             if messages and isinstance(messages[-1], (AIMessage, ToolMessage)):
                                 collected_response.append(messages[-1].content)
+                                if isinstance(messages[-1], ToolMessage):
+                                    res = json.loads(messages[-1].content)
+                                    if isinstance(res, dict) and res.get("status") == "interrupt":
+                                        # Generate a unique tool call ID using timestamp and UUID
+                                        tool_call_id = f"tool_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+                                        
+                                        tool_call = AIMessage(
+                                            content="",
+                                            tool_calls=[
+                                                {
+                                                    "name": "sonic_request_transaction_data",
+                                                    "args": {},  # More explicit than empty dict
+                                                    "id": tool_call_id,
+                                                    "type": "tool_call",
+                                                }
+                                            ],
+                                        )
+                                        agent.stream(tool_call, config)
                                 
-                    checkpoint_tuples = [c async for c in checkpointer.alist(config)]
-                    logger.debug(f"Checkpoint history: {checkpoint_tuples}")
+                    checkpoint_tuples = [c for c in checkpointer.list(config)]
+                    logger.info(f"Checkpoint history: {checkpoint_tuples}")
 
             return "\n".join(filter(None, collected_response))
             
         except Exception as e:
             logger.error(f"Generation error: {str(e)}")
             raise GeminiAPIError(f"Text generation failed: {str(e)}")
+    def continue_execution(self, data: str) -> Any:
+        """Continue execution based on provided data"""
+        try:
+            response_command = Command(resume={"data": data})
+            config = {"configurable": {"thread_id": "10450232231323"}}
+            
+            db_uri = os.getenv('POSTGRES_DB_URI')
+            if not db_uri:
+                raise GeminiConfigurationError("PostgreSQL connection URI not found in environment")
+            with PostgresSaver.from_conn_string(db_uri) as checkpointer:
+                checkpointer.setup()
+                agent = create_react_agent(
+                    self._get_client(),
+                    self.tools,
+                    checkpointer=checkpointer
+                )
+                agent.stream(response_command, config)
 
-    async def check_model(self, model: str, **kwargs) -> bool:
+            return data
+            
+            
+        except Exception as e:
+            raise GeminiAPIError(f"Continuation failed: {e}")
+
+    def check_model(self, model: str, **kwargs) -> bool:
         """Check if a specific model is available"""
         try:
             supported_models = [
@@ -280,7 +332,7 @@ class GeminiConnection(BaseConnection):
         except Exception as e:
             raise GeminiAPIError(f"Model check failed: {e}")
 
-    async def list_models(self, **kwargs) -> None:
+    def list_models(self, **kwargs) -> None:
         """List all available Gemini models"""
         try:
             supported_models = [
@@ -294,6 +346,10 @@ class GeminiConnection(BaseConnection):
                     
         except Exception as e:
             raise GeminiAPIError(f"Listing models failed: {e}")
+        
+    def interrup_chat(self, query: str) -> Any:
+        response = interrupt({query: "query"})
+        return response["data"]
 
     def perform_action(self, action_name: str, kwargs) -> Any:
         """Execute a Gemini action with validation"""
@@ -312,14 +368,4 @@ class GeminiConnection(BaseConnection):
 
         method_name = action_name.replace('-', '_')
         method = getattr(self, method_name)
-        
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        try:
-            return loop.run_until_complete(method(**kwargs))
-        except Exception as e:
-            raise GeminiAPIError(f"Action failed: {str(e)}")
+        return method(**kwargs)
