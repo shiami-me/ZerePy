@@ -61,6 +61,10 @@
     },
     {
       "name": "together"
+    },
+    {
+      "name": "sonic",
+      "network": "testnet"
     }
   ],
   "tasks": [

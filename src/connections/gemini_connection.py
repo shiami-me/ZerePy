@@ -59,7 +59,7 @@ class GeminiConnection(BaseConnection):
                 self.tools.append(self.search_tool)
         
         if "sonic" in self.config.get("plugins", []):
-            sonic_tools = get_sonic_tools()
+            sonic_tools = get_sonic_tools(self._agent)
             self.tools.extend(sonic_tools)       
         
         if "image" in self.config.get("plugins", []):
@@ -220,6 +220,7 @@ class GeminiConnection(BaseConnection):
     4. Keep responses natural and concise
     5. Use multiple tools when needed
     6. When you need some external information or the user asks for it, use Tavily search tool when available.
+    7. Use connect wallet address whenever it's needed, for example - for sonic related tools. Ask user to connect wallet if needed(only for sonic related tools).
     """
             if not self.system_prompt:
                 self.system_prompt = enhanced_system_prompt
@@ -234,13 +235,14 @@ class GeminiConnection(BaseConnection):
                 "context": {}
             }
 
-            config = {"configurable": {"thread_id": "1"}}
+            config = {"configurable": {"thread_id": "104500"}}
             
             collected_response = []
             db_uri = os.getenv('POSTGRES_DB_URI')
             if not db_uri:
                 raise GeminiConfigurationError("PostgreSQL connection URI not found in environment")
             async with AsyncPostgresSaver.from_conn_string(db_uri) as checkpointer:
+                await checkpointer.setup()
                 agent = create_react_agent(
                     self._get_client(),
                     self.tools,

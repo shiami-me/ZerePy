@@ -218,11 +218,9 @@ class SonicConnection(BaseConnection):
             logger.error(f"Failed to get balance: {e}")
             raise
 
-    def transfer(self, to_address: str, amount: float, token_address: Optional[str] = None) -> str:
+    def transfer(self, from_address: str, to_address: str, amount: float, token_address: Optional[str] = None) -> str:
         """Transfer $S or tokens to an address"""
         try:
-            private_key = os.getenv('SONIC_PRIVATE_KEY')
-            account = self._web3.eth.account.from_key(private_key)
             chain_id = self._web3.eth.chain_id
             
             if token_address:
@@ -237,14 +235,12 @@ class SonicConnection(BaseConnection):
                     Web3.to_checksum_address(to_address),
                     amount_raw
                 ).build_transaction({
-                    'from': account.address,
-                    'nonce': self._web3.eth.get_transaction_count(account.address),
+                    'from': from_address,
                     'gasPrice': self._web3.eth.gas_price,
                     'chainId': chain_id
                 })
             else:
                 tx = {
-                    'nonce': self._web3.eth.get_transaction_count(account.address),
                     'to': Web3.to_checksum_address(to_address),
                     'value': self._web3.to_wei(amount, 'ether'),
                     'gas': 21000,
@@ -252,12 +248,7 @@ class SonicConnection(BaseConnection):
                     'chainId': chain_id
                 }
 
-            signed = account.sign_transaction(tx)
-            tx_hash = self._web3.eth.send_raw_transaction(signed.rawTransaction)
-
-            # Log and return explorer link immediately
-            tx_link = self._get_explorer_link(tx_hash.hex())
-            return f"\n⛓️ Transfer transaction sent: {tx_link}"
+            return tx
 
         except Exception as e:
             logger.error(f"Transfer failed: {e}")

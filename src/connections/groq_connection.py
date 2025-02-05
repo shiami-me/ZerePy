@@ -59,7 +59,7 @@ class GroqConnection(BaseConnection):
                 self.tools.append(self.search_tool)
                 
         if "sonic" in self.config.get("plugins", []):
-            sonic_tools = get_sonic_tools()
+            sonic_tools = get_sonic_tools(self._agent)
             self.tools.extend(sonic_tools)       
         
         if "image" in self.config.get("plugins", []):
@@ -224,7 +224,7 @@ You are a helpful assistant with access to various tools. When using tools:
 4. Keep responses natural and concise
 5. Use multiple tools when needed
 6. When you need some external information or the user asks for it, use Tavily search tool when available.
-
+7. Use connect wallet address whenever it's needed, for example - for sonic related tools. Ask user to connect wallet if needed(only for sonic related tools).
 
 """
             # Store or update system prompt if it's new

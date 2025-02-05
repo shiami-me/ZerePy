@@ -61,17 +61,19 @@ def get_sonic_balance(agent, **kwargs):
 def send_sonic(agent, **kwargs):
     """Send $S tokens to an address"""
     try:
+        from_address = kwargs.get("from_address")
         to_address = kwargs.get("to_address")
         amount = float(kwargs.get("amount"))
 
-        tx_url = agent.connection_manager.connections["sonic"].transfer(
+        tx = agent.connection_manager.connections["sonic"].transfer(
+            from_address=from_address,
             to_address=to_address,
             amount=amount
         )
 
         logger.info(f"Transferred {amount} $S to {to_address}")
-        logger.info(f"Transaction URL: {tx_url}")
-        return tx_url
+        logger.info(f"Transaction Data: {tx}")
+        return tx
 
     except Exception as e:
         logger.error(f"Failed to send $S: {str(e)}")
@@ -81,19 +83,21 @@ def send_sonic(agent, **kwargs):
 def send_sonic_token(agent, **kwargs):
     """Send tokens on Sonic chain"""
     try:
+        from_address = kwargs.get("from_address")
         to_address = kwargs.get("to_address")
         token_address = kwargs.get("token_address")
         amount = float(kwargs.get("amount"))
 
-        tx_url = agent.connection_manager.connections["sonic"].transfer(
+        tx = agent.connection_manager.connections["sonic"].transfer(
+            from_address=from_address,
             to_address=to_address,
             amount=amount,
             token_address=token_address
         )
 
         logger.info(f"Transferred {amount} tokens to {to_address}")
-        logger.info(f"Transaction URL: {tx_url}")
-        return tx_url
+        logger.info(f"Transaction Data: {tx}")
+        return tx
 
     except Exception as e:
         logger.error(f"Failed to send tokens: {str(e)}")

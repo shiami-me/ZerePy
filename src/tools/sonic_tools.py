@@ -8,150 +8,228 @@ logger = logging.getLogger("tools.sonic_tools")
 class SonicTokenLookupTool(BaseTool):
     name: str = "sonic_token_lookup"
     description: str = """
-    sonic_token_lookup: Look up token addresses by ticker symbol
-    Example: For "What's the address for BTC?", use: "BTC"
-    Use this tool to look up token addresses by their ticker symbol.
-    Input should be a ticker symbol (e.g., "BTC", "ETH").
-    Returns the token address if found, null if not found.
+    sonic_token_lookup: Get token address
+    Input should be a token symbol (e.g. "BTC", "ETH")
+    Returns the token's contract address
     """
-    
-    def __init__(self):
+
+    def __init__(self, agent):
         super().__init__()
-    
-    def _run(self, ticker: str) -> str:
+        self._agent = agent
+
+    def _run(self, token: str) -> str:
         try:
-            # result = execute_action(
-            #     action_name="get-token-by-ticker",
-            #     kwargs={"ticker": ticker}
-            # )
-            logger.info("SonicTokenLookupTool: Looking up token...")
-            return json.dumps({"ticker": ticker, "address": "address"})
+            logger.info(f"Looking up token address for: {token}")
+            
+            if token.upper() == "S":
+                return json.dumps({"address": None})
+
+            response = execute_action(
+                agent=self._agent,
+                action_name="get-token-by-ticker",
+                ticker=token
+            )
+
+            if not response:
+                return json.dumps({"error": f"Token {token} not found"})
+
+            return json.dumps({"address": response})
+
         except Exception as e:
-            logger.error(f"Failed to lookup token: {str(e)}")
+            logger.error(f"Token lookup failed: {str(e)}")
             return json.dumps({"error": str(e)})
 
 class SonicBalanceCheckTool(BaseTool):
     name: str = "sonic_balance_check"
     description: str = """
-    sonic_balance_check: Check token balances
-    Example: For "Check my S balance", use: {"address": null, "token_address": null}
-    Example: For "Check my BTC balance at 0x123", use: {"address": "0x123", "token_address": "0xBTC_ADDRESS"}
-    Check balance of $S or other tokens on Sonic.
-    Input should be a JSON string with optional 'address' and 'token_address' fields.
-    If no address is provided, checks the default wallet balance.
-    Use sonic_token_lookup for token addresses lookup and pass the ticker like, eg- "Check my S balance" - S is the ticker
+    sonic_balance_check: Check token balance
+    Example: For "Check S balance", use: {"token": "S"}
+    Check balance of any token on Sonic. Input should be a JSON string with:
+    - token: token symbol (e.g. "S", "BTC", "ETH")
     """
-    
-    def __init__(self):
+
+    def __init__(self, agent):
         super().__init__()
-    
-    def _run(self, **kwargs) -> str:
+        self._agent = agent
+
+    def _run(self, token: str = "S") -> str:
         try:
-            # result = execute_action(
-            #     action_name="get-sonic-balance",
-            #     kwargs=kwargs
-            # )
-            logger.info("SonicBalanceCheckTool: Checking balance...")
+            logger.info(f"Checking balance for token: {token}")
+            
+            balance_params = {}
+            
+            action_name = "get-sonic-balance"
+            if token.upper() == "S":
+                balance_params["token_address"] = None
+            else:
+                token_lookup_result = json.loads(SonicTokenLookupTool(self._agent)._run(token))
+                if "error" in token_lookup_result:
+                    return json.dumps({"error": f"Invalid token {token}"})
+                balance_params["token_address"] = token_lookup_result["address"]
+
+            response = execute_action(
+                agent=self._agent,
+                action_name=action_name,
+                **balance_params
+            )
+
+            if not response:
+                if response != 0:
+                    return json.dumps({"error": f"Could not fetch balance for {token}"})
+
             return json.dumps({
-                "balance": "balance",
-                "address": kwargs.get("address", "default"),
-                "token_address": kwargs.get("token_address", "S")
+                "status": "success",
+                "balance": str(response),
+                "token": token,
+                "details": balance_params
             })
+
         except Exception as e:
-            logger.error(f"Failed to check balance: {str(e)}")
-            return json.dumps({"error": str(e)})
+            logger.error(f"Balance check failed: {str(e)}")
+            return json.dumps({
+                "error": str(e),
+                "parameters": {
+                    "token": token
+                }
+            })
 
 class SonicTokenTransferTool(BaseTool):
     name: str = "sonic_token_transfer"
     description: str = """
     sonic_token_transfer: Transfer tokens
-    Example: For "Send 100 S to 0x456", use: {"to_address": "0x456", "amount": 100}
-    Example: For "Send 50 BTC to 0x789", use: {"to_address": "0x789", "amount": 50, "token_address": "0xBTC_ADDRESS"}
-    Transfer $S or other tokens on Sonic.
-    Input should be a JSON string with:
+    Upon execution, output that "Continuing transaction in your wallet"
+    Example: For "Send/Transfer/Execute/Transact 100 S to 0x456", use: {"to_address": "0x456", "amount": 100, "token": "S"}
+    Transfer any token on Sonic. Input should be a JSON string with:
+    - from_address: sender address
     - to_address: recipient address
     - amount: amount to send
-    - token_address: (optional) token address (if not $S)
-    
-    Check the balance before transfer.
-    Use sonic_token_lookup for token addresses lookup and pass the ticker like, eg- "Check my S balance" - S is the ticker
+    - token: token symbol (e.g. "S", "BTC", "ETH")
     """
     
-    def __init__(self):
+    def __init__(self, agent):
         super().__init__()
+        self._agent = agent
     
-    def _run(self, **kwargs) -> str:
+    def _run(self, from_address: str, to_address: str, amount: float, token: str = "S") -> str:
         try:
-            action_name = "send-sonic" if "token_address" not in kwargs else "send-sonic-token"
+            if not all([from_address, to_address, amount, token]):
+                return json.dumps({
+                    "error": "Missing required parameters"
+                })
+
+            transfer_params = {
+                "from_address": from_address,
+                "to_address": to_address,
+                "amount": float(amount)
+            }
+
+            if token.upper() == "S":
+                transfer_params["token_address"] = None
+                action_name = "send-sonic"
+            else:
+                token_lookup_result = json.loads(SonicTokenLookupTool(self._agent)._run(token))
+                if "error" in token_lookup_result:
+                    return json.dumps({"error": f"Invalid token {token}"})
+                transfer_params["token_address"] = token_lookup_result["address"]
+                action_name = "send-sonic-token"
+
+            logger.info(f"Transferring {amount} {token} to {to_address}")
             
-            # result = execute_action(
-            #     action_name=action_name,
-            #     kwargs=kwargs
-            # )
-            logger.info("SonicTokenTransferTool: Transferring tokens...")
+            response = execute_action(
+                agent=self._agent,
+                action_name=action_name,
+                **transfer_params
+            )
+
             return json.dumps({
                 "status": "success",
-                "transaction_url": "uri",
-                "details": kwargs
+                "tx": response,
+                "details": transfer_params
             })
+
         except Exception as e:
-            logger.error(f"Failed to transfer tokens: {str(e)}")
-            return json.dumps({"error": str(e)})
+            logger.error(f"Transfer failed: {str(e)}")
+            return json.dumps({
+                "error": str(e),
+                "parameters": {
+                    "to_address": to_address,
+                    "amount": amount,
+                    "token": token
+                }
+            })
 
 class SonicSwapTool(BaseTool):
     name: str = "sonic_swap"
     description: str = """
     sonic_swap: Swap tokens
-    Example: For "Swap 100 S to BTC", use: {
-        "token_in": "0xS_ADDRESS",
-        "token_out": "0xBTC_ADDRESS",
-        "amount": 100,
-        "slippage": 0.5
-    }
-    Swap tokens on Sonic DEX.
-    Input should be a JSON string with:
-    - token_in: input token address
-    - token_out: output token address
+    Example: For "Swap 100 S to BTC", use: {"from_token": "S", "to_token": "BTC", "amount": 100}
+    Swap between any tokens on Sonic. Input should be a JSON string with:
+    - from_token: token to swap from
+    - to_token: token to swap to
     - amount: amount to swap
-    - slippage: (optional) slippage tolerance (default 0.5%)
-    
-    Always check the balance before swap.
-    Use sonic_token_lookup for token addresses lookup and pass the ticker like, eg- "Swap 100 S to BTC" - S and BTC is the ticker.
     """
-    
-    def __init__(self):
+
+    def __init__(self, agent):
         super().__init__()
-    
-    def _run(self, **kwargs) -> str:
+        self._agent = agent
+
+    def _run(self, from_token: str, to_token: str, amount: float) -> str:
         try:
-            # result = execute_action(
+            if not all([from_token, to_token, amount]):
+                return json.dumps({
+                    "error": "Missing required parameters"
+                })
+
+            swap_params = {"amount": float(amount)}
+
+            # Handle from_token
+            if from_token.upper() == "S":
+                swap_params["from_token_address"] = None
+            else:
+                from_token_lookup = json.loads(SonicTokenLookupTool(self._agent)._run(from_token))
+                if "error" in from_token_lookup:
+                    return json.dumps({"error": f"Invalid from_token {from_token}"})
+                swap_params["from_token_address"] = from_token_lookup["address"]
+
+            # Handle to_token
+            if to_token.upper() == "S":
+                swap_params["to_token_address"] = None
+            else:
+                to_token_lookup = json.loads(SonicTokenLookupTool(self._agent)._run(to_token))
+                if "error" in to_token_lookup:
+                    return json.dumps({"error": f"Invalid to_token {to_token}"})
+                swap_params["to_token_address"] = to_token_lookup["address"]
+
+            logger.info(f"Swapping {amount} {from_token} to {to_token}")
+            
+            # response = execute_action(
+            #     agent=self._agent,
             #     action_name="swap-sonic",
-            #     kwargs=kwargs
+            #     **swap_params
             # )
-            logger.info("SonicSwapTool: Swapping tokens...")
+
             return json.dumps({
                 "status": "success",
                 "transaction_url": "uri",
-                "details": kwargs
+                "details": swap_params
             })
-        except Exception as e:
-            logger.error(f"Failed to swap tokens: {str(e)}")
-            return json.dumps({"error": str(e)})
 
-# Helper function to initialize all Sonic tools
-def get_sonic_tools() -> list:
-    """
-    Initialize and return all Sonic tools
-    
-    Args:
-        agent: The agent instance to use for tool execution
-        
-    Returns:
-        list: List of initialized Sonic tools
-    """
+        except Exception as e:
+            logger.error(f"Swap failed: {str(e)}")
+            return json.dumps({
+                "error": str(e),
+                "parameters": {
+                    "from_token": from_token,
+                    "to_token": to_token,
+                    "amount": amount
+                }
+            })
+
+def get_sonic_tools(agent) -> list:
+    """Return a list of all Sonic-related tools."""
     return [
-        SonicTokenLookupTool(),
-        SonicBalanceCheckTool(),
-        SonicTokenTransferTool(),
-        SonicSwapTool()
+        SonicTokenLookupTool(agent),
+        SonicBalanceCheckTool(agent),
+        SonicTokenTransferTool(agent),
+        SonicSwapTool(agent)
     ]

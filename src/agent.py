@@ -12,6 +12,7 @@ import src.actions.twitter_actions
 import src.actions.echochamber_actions
 import src.actions.solana_actions
 import src.actions.together_ai_actions
+import src.actions.sonic_actions
 from datetime import datetime
 
 REQUIRED_FIELDS = ["name", "bio", "traits", "examples", "loop_delay", "config", "tasks"]
