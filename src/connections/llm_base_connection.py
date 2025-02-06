@@ -167,7 +167,7 @@ class LLMBaseConnection(BaseConnection):
 
             if tool_documents:
                 self.vector_store = PGVector(
-                    embeddings=GoogleGenerativeAIEmbeddings(model="models/embedding-001"),
+                    embeddings=GoogleGenerativeAIEmbeddings(model="models/text-embedding-004"),
                     collection_name="tools",
                     connection=db_uri,
                     use_jsonb=True,
