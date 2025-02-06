@@ -399,9 +399,8 @@ class GeminiConnection(BaseConnection):
     
     8. For Sonic transfers or swaps:
        - First execute the transfer/swap operation
-       - Wait for and verify the "status": "complete" response
-       - Only then use sonic_request_transaction_data
-    9. Never execute sonic_request_transaction_data in parallel with other operations.
+       - Always use sonic_request_transaction_data in such transfer/swap/send operations.
+       - Do not use sonic_request_transaction_data for anything other than transfers/swaps/send
     """
             if not self.system_prompt:
                 self.system_prompt = enhanced_system_prompt
@@ -416,10 +415,9 @@ class GeminiConnection(BaseConnection):
                 "context": {}
             }
 
-            config = {"configurable": {"thread_id": "232482"}}
+            config = {"configurable": {"thread_id": "24249321221"}}
             
             collected_response = []
-            logger.info(f"Initial state: {initial_state}")
             db_uri = os.getenv('POSTGRES_DB_URI')
             if not db_uri:
                 raise GeminiConfigurationError("PostgreSQL connection URI not found in environment")
@@ -427,16 +425,12 @@ class GeminiConnection(BaseConnection):
             with PostgresSaver.from_conn_string(db_uri) as checkpointer:
                 checkpointer.setup()
                 graph = self.graph_builder.compile(checkpointer=checkpointer)
+                snapshot = graph.get_state(config)
                 response_stream = graph.stream(
                     initial_state,
                     config,
                 )
-                for checkpoint in checkpointer.list(config):
-                    logger.info(f"Checkpoint: {checkpoint}")
                 for chunk in response_stream:
-                    snapshot = graph.get_state(config)
-                    logger.info(snapshot.next)
-                    logger.info(f"Chunk: {chunk}")
                     if isinstance(chunk, dict):
                         if "chatbot" in chunk and "messages" in chunk["chatbot"]:
                             messages = chunk["chatbot"]["messages"]
@@ -444,9 +438,7 @@ class GeminiConnection(BaseConnection):
                             if messages and isinstance(messages[-1], (AIMessage, ToolMessage)):
                                 collected_response.append(messages[-1].content)
                         elif "tools" in chunk and "messages" in chunk["tools"]:
-                            logger.info(f"Tools: {chunk['tools']}")
                             messages = chunk["tools"]["messages"]
-                            logger.info(f"Messages: {messages}")
                             for message in messages:
                                 if isinstance(message, (ToolMessage, AIMessage)):
                                     collected_response.append(message.content)
@@ -458,25 +450,65 @@ class GeminiConnection(BaseConnection):
     def continue_execution(self, data: str) -> Any:
         """Continue execution based on provided data"""
         try:
-            response_command = Command(resume={"data": data})
-            config = {"configurable": {"thread_id": "232482"}}
+            config = {"configurable": {"thread_id": "24249321221"}}
             
             db_uri = os.getenv('POSTGRES_DB_URI')
             if not db_uri:
                 raise GeminiConfigurationError("PostgreSQL connection URI not found in environment")
+            
+            interrupted_tool_call_id = None
+            
             with PostgresSaver.from_conn_string(db_uri) as checkpointer:
                 checkpointer.setup()
                 graph = self.graph_builder.compile(checkpointer=checkpointer)
-                response_stream = graph.stream(
-                    response_command,
-                    config,
-                )
+                snapshot = graph.get_state(config)
+                # Process messages to find interrupted tool call
+                messages = snapshot.values["messages"]
+                for i, message in enumerate(messages):
+                    
+                    if isinstance(message, ToolMessage):
+                        try:
+                            content = json.loads(message.content)
+                            if content.get("status") == "interrupt":
+                                # Look for the next ToolMessage
+                                for next_msg in messages[i+1:]:
+                                    if isinstance(next_msg, ToolMessage):
+                                        interrupted_tool_call_id = next_msg.tool_call_id
+                                        try:
+                                            tool_message = AIMessage(
+                                                data
+                                            )
+                                            tool_message.additional_kwargs = {
+                                                "tool_call_id": interrupted_tool_call_id
+                                            }
+                                            response_command = Command(
+                                                update={
+                                                    "messages": [
+                                                        tool_message
+                                                    ],
+                                                }
+                                            )
+                                            
+                                            response_stream = graph.stream(
+                                                response_command,
+                                                config,
+                                            )
+                                        except Exception as e:
+                                            logger.error(f"Error in stream: {str(e)}")
+                                            raise
+                                        break
+                                break
+                        except json.JSONDecodeError:
+                            # Skip messages that can't be parsed as JSON
+                            continue
+                    
+                logger.info(f"Found interrupted tool call ID: {interrupted_tool_call_id}")
 
-            return data
-            
-            
+                return data
         except Exception as e:
-            raise GeminiAPIError(f"Continuation failed: {e}")
+            logger.error(f"Error in continue_execution: {str(e)}")
+            raise
+
 
     def check_model(self, model: str, **kwargs) -> bool:
         """Check if a specific model is available"""

@@ -59,7 +59,7 @@ class GroqConnection(BaseConnection):
                 self.tools.append(self.search_tool)
                 
         if "sonic" in self.config.get("plugins", []):
-            sonic_tools = get_sonic_tools(self._agent)
+            sonic_tools = get_sonic_tools(self._agent, llm="qroq")
             self.tools.extend(sonic_tools)       
         
         if "image" in self.config.get("plugins", []):

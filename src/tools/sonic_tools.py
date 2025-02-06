@@ -142,7 +142,7 @@ class SonicTokenTransferTool(BaseTool):
             )
 
             return json.dumps({
-                "status": "complete",  # Changed from "success" to "complete"
+                "status": "interrupt",
                 "tx": response,
                 "details": transfer_params,
                 "next_action": "sonic_request_transaction_data"  # Added to guide sequence
