@@ -1,11 +1,13 @@
 import logging
 import os
 import json
-from typing import Dict, Any, Annotated, Optional
+import uuid
+from typing import Dict, Any, Annotated
 from typing_extensions import TypedDict
 from dotenv import load_dotenv, set_key
 from langchain.schema import HumanMessage, AIMessage, SystemMessage
 from langchain_core.messages import ToolMessage
+from langchain_postgres.vectorstores import PGVector
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.postgres import PostgresSaver
@@ -14,13 +16,17 @@ from src.tools.sonic_tools import get_sonic_tools
 from src.tools.together_tools import get_together_tools
 from src.connections.base_connection import BaseConnection, Action, ActionParameter
 from langgraph.types import Command, interrupt
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_core.documents import Document
+from langgraph.prebuilt import tools_condition
+
 
 logger = logging.getLogger("connections.llm_base_connection")
 
 class State(TypedDict):
     """Type for tracking conversation state"""
     messages: Annotated[list, add_messages]
-    context: Dict[str, Any]
+    selected_tools: list[str]
 
 class BasicToolNode:
     """Tool execution node for LangGraph"""
@@ -115,28 +121,65 @@ class LLMBaseConnection(BaseConnection):
         self._agent = agent
         self.register_actions()
         self.setup_tools()
+        self.tool_registry = {}
         self.graph_builder = self._create_conversation_graph()
 
     def setup_tools(self):
         """Initialize tools for the connection"""
-        load_dotenv()
+        try:
+            load_dotenv()
+            
+            if self.config.get("tavily", False):
+                tavily_api_key = os.getenv('TAVILY_API_KEY')
+                if tavily_api_key:
+                    self.search_tool = TavilySearchResults(
+                        api_key=tavily_api_key,
+                        max_results=self.config.get("max_tavily_results", 2)
+                    )
+                    self.tools.append(self.search_tool)
+            
+            if "sonic" in self.config.get("plugins", []):
+                sonic_tools = get_sonic_tools(agent=self._agent, llm=self.get_llm_identifier())
+                self.tools.extend(sonic_tools)       
         
-        if self.config.get("tavily", False):
-            tavily_api_key = os.getenv('TAVILY_API_KEY')
-            if tavily_api_key:
-                self.search_tool = TavilySearchResults(
-                    api_key=tavily_api_key,
-                    max_results=self.config.get("max_tavily_results", 2)
+            if "image" in self.config.get("plugins", []):
+                image_tools = get_together_tools(self._agent)
+                self.tools.extend(image_tools)
+            self.tool_registry = {
+                str(uuid.uuid4()): tool for tool in self.tools
+            }
+            db_uri = os.getenv('POSTGRES_DB_URI')
+            if not db_uri:
+                raise ValueError("PostgreSQL connection URI not found in environment")
+            
+            # Create tool documents with error handling
+            tool_documents = []
+            for id, tool in self.tool_registry.items():
+                try:
+                    doc = Document(
+                        page_content=tool.description,
+                        id=id,
+                        metadata={"tool_name": tool.name},
+                    )
+                    tool_documents.append(doc)
+                except Exception as e:
+                    logger.error(f"Error creating document for tool {tool.name}: {e}")
+                    continue
+
+            if tool_documents:
+                self.vector_store = PGVector(
+                    embeddings=GoogleGenerativeAIEmbeddings(model="models/embedding-001"),
+                    collection_name="tools",
+                    connection=db_uri,
+                    use_jsonb=True,
                 )
-                self.tools.append(self.search_tool)
-        
-        if "sonic" in self.config.get("plugins", []):
-            sonic_tools = get_sonic_tools(agent=self._agent, llm=self.get_llm_identifier())
-            self.tools.extend(sonic_tools)       
-        
-        if "image" in self.config.get("plugins", []):
-            image_tools = get_together_tools(self._agent)
-            self.tools.extend(image_tools)
+                self.vector_store.add_documents(tool_documents)
+            else:
+                raise ValueError("No valid tool documents created")
+                
+        except Exception as e:
+            logger.error(f"Error in setup_tools: {e}")
+            raise
 
     def get_llm_identifier(self) -> str:
         """Override this method to return the LLM identifier"""
@@ -146,66 +189,62 @@ class LLMBaseConnection(BaseConnection):
         """Create the conversation flow graph"""
         def chatbot(state: State):
             """Generate response using LLM"""
-            llm = self._get_client()
-            messages = state["messages"]
-            converted_messages = []
-            for msg in messages:
-                if isinstance(msg, SystemMessage):
-                    # Convert system message to human message
-                    converted_messages.append(HumanMessage(content=f"System: {msg.content}"))
-                elif isinstance(msg, (HumanMessage, AIMessage, ToolMessage)):
-                    converted_messages.append(msg)
-            
-            # If there are tool messages, create a more detailed summary prompt
-            tool_messages = [msg for msg in messages if isinstance(msg, ToolMessage)]
-            if tool_messages:
-                context = "\n\nI found multiple relevant sources:\n" + "\n".join(
-                    [msg.content for msg in tool_messages]
-                ) + "\n\nPlease consider all these sources in your response."
+            try:
+                llm = self._get_client()
+                messages = state["messages"]
+                converted_messages = []
+                for msg in messages:
+                    if isinstance(msg, SystemMessage):
+                        converted_messages.append(HumanMessage(content=f"System: {msg.content}"))
+                    elif isinstance(msg, (HumanMessage, AIMessage, ToolMessage)):
+                        converted_messages.append(msg)
+
+                # Safely get selected tools
+                selected_tools = []
+                for tool_id in state.get("selected_tools", []):
+                    tool = self.tool_registry.get(tool_id)
+                    if tool:
+                        selected_tools.append(tool)
                 
-                # Add context to the last user message
-                for i in reversed(range(len(converted_messages))):
-                    if isinstance(converted_messages[i], HumanMessage):
-                        converted_messages[i].content += context
-                        break
-            
-            llm_with_tools = llm.bind_tools(
-                tools=self.tools,
-                tool_choice="auto"
-            )
-            response = llm_with_tools.invoke(converted_messages)
-            
-            return {"messages": [response]}
+                if not selected_tools:
+                    # Fallback to using all tools if none selected
+                    selected_tools = self.tools
+
+                llm_with_tools = llm.bind_tools(tools=selected_tools)
+                response = llm_with_tools.invoke(converted_messages)
+                
+                return {"messages": [response]}
+            except Exception as e:
+                logger.error(f"Error in chatbot node: {str(e)}")
+                return {"messages": [AIMessage(content="I apologize, but I encountered an error processing your request.")]}
 
         def route_tools(state: State):
             """Route based on whether tools are needed"""
-            if isinstance(state, list):
-                ai_message = state[-1]
-            elif messages := state.get("messages", []):
-                ai_message = messages[-1]
-            else:
-                raise ValueError(f"No messages found in input state: {state}")
-            
-            tool_calls = getattr(ai_message, "tool_calls", None)
-            if tool_calls is None and hasattr(ai_message, "additional_kwargs"):
-                tool_calls = ai_message.additional_kwargs.get("tool_calls", [])
-            
-            if tool_calls and len(tool_calls) > 0:
-                logger.debug(f"Found tool calls: {tool_calls}")
-                return "tools"
-            return END
+            try:
+                last_user_message = state["messages"][-1]
+                query = last_user_message.content
+                tool_documents = self.vector_store.similarity_search(query)
+                selected_tool_ids = [doc.id for doc in tool_documents if doc.id in self.tool_registry]
+                
+                if not selected_tool_ids:
+                    # Fallback to using all tools
+                    selected_tool_ids = list(self.tool_registry.keys())
+                    
+                return {"selected_tools": selected_tool_ids}
+            except Exception as e:
+                logger.error(f"Error in route_tools: {str(e)}")
+                return {"selected_tools": list(self.tool_registry.keys())}
 
         graph_builder = StateGraph(State)
         graph_builder.add_node("chatbot", chatbot)
+        graph_builder.add_node("route_tools", route_tools)
         tool_node = BasicToolNode(tools=self.tools)
         graph_builder.add_node("tools", tool_node)
-        graph_builder.add_edge(START, "chatbot")
-        graph_builder.add_conditional_edges(
-            "chatbot",
-            route_tools,
-            {"tools": "tools", END: END}
-        )
+        graph_builder.add_conditional_edges("chatbot", tools_condition, path_map=["tools", "__end__"])
         graph_builder.add_edge("tools", "chatbot")
+        graph_builder.add_edge("route_tools", "chatbot")
+        graph_builder.add_edge(START, "route_tools")
+
         return graph_builder
 
     def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -382,7 +421,6 @@ You are a helpful assistant with access to various tools. When using tools:
 
             initial_state = {
                 "messages": messages,
-                "context": {}
             }
 
             config = {"configurable": {"thread_id": "24249321221"}}
