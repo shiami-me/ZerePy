@@ -121,7 +121,6 @@ class LLMBaseConnection(BaseConnection):
         self._agent = agent
         self.register_actions()
         self.setup_tools()
-        self.tool_registry = {}
         self.graph_builder = self._create_conversation_graph()
 
     def setup_tools(self):
