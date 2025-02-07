@@ -229,8 +229,9 @@ class SonicSwapTool(BaseTool):
 class SonicRequestTransactionDataTool(BaseTool):
     name: str = "sonic_request_transaction_data"
     description: str = """
-sonic_request_transaction_data - Request transaction data for confirming Sonic transactions.
-Returns the confirmed transaction data. Do not execute it unless its a token transfer/swap.
+sonic_request_transaction_data - Executed after sonic transactions are completed
+Returns the confirmed transaction data.
+Example - 1. Send 100 S to 0x123 2. Swap 100 S to BTC
 """
 
     def __init__(self, agent, llm):

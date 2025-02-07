@@ -89,11 +89,15 @@ class BasicToolNode:
                     if tool_name == "sonic_request_transaction_data":
                         outputs.append(
                             ToolMessage(
-                                content="Waiting for transaction data",
+                                content=json.dumps({
+                                    "status": "success",
+                                    "message": "Transaction data requested"
+                                }),
                                 name=tool_name,
                                 tool_call_id=tool_id,
                             )
                         )
+                        continue
                     else:
                         outputs.append(
                             ToolMessage(
@@ -168,7 +172,7 @@ class LLMBaseConnection(BaseConnection):
             if tool_documents:
                 self.vector_store = PGVector(
                     embeddings=GoogleGenerativeAIEmbeddings(model="models/text-embedding-004"),
-                    collection_name="tools",
+                    collection_name=f"{self.get_llm_identifier()}-tools",
                     connection=db_uri,
                     use_jsonb=True,
                 )
@@ -201,7 +205,8 @@ class LLMBaseConnection(BaseConnection):
                 # Safely get selected tools
                 selected_tools = []
                 for tool_id in state.get("selected_tools", []):
-                    tool = self.tool_registry.get(tool_id)
+                    tool = self.tool_registry[tool_id]
+                    logger.info(f"Tool ID: {tool_id}")
                     if tool:
                         selected_tools.append(tool)
                 
@@ -406,7 +411,6 @@ You are a helpful assistant with access to various tools. When using tools:
 7. Use connect wallet address whenever it's needed, for example - for sonic related tools. Ask user to connect wallet if needed(only for sonic related tools except sonic_request_transaction_data).
 
 8. For Sonic transfers or swaps:
-   - First execute the transfer/swap operation
    - Always use sonic_request_transaction_data in such transfer/swap/send operations.
    - Do not use sonic_request_transaction_data for anything other than transfers/swaps/send
 """
