@@ -21,7 +21,6 @@ from src.prompts import TAVILY_SEARCH_TOOL_PROMPT
 from langchain_core.documents import Document
 from langgraph.prebuilt import tools_condition
 
-
 logger = logging.getLogger("connections.llm_base_connection")
 
 class State(TypedDict):
@@ -68,45 +67,22 @@ class BasicToolNode:
                     logger.error(f"Tool not found: {tool_name}")
                     continue
                 
-                try:
-                    tool_result = self.tools_by_name[tool_name].invoke(tool_args)
-                    logger.debug(f"Tool result: {tool_result}")
-                    
-                    tool_content = (
-                        json.dumps(tool_result) 
-                        if not isinstance(tool_result, str) 
-                        else tool_result
+                tool_result = self.tools_by_name[tool_name].invoke(tool_args)
+                logger.debug(f"Tool result: {tool_result}")
+                
+                tool_content = (
+                    json.dumps(tool_result) 
+                    if not isinstance(tool_result, str) 
+                    else tool_result
+                )
+                
+                outputs.append(
+                    ToolMessage(
+                        content=tool_content,
+                        name=tool_name,
+                        tool_call_id=tool_id,
                     )
-                    
-                    outputs.append(
-                        ToolMessage(
-                            content=tool_content,
-                            name=tool_name,
-                            tool_call_id=tool_id,
-                        )
-                    )
-                except Exception as e:
-                    logger.error(f"Error executing tool {tool_name}: {e}")
-                    if tool_name == "sonic_request_transaction_data":
-                        outputs.append(
-                            ToolMessage(
-                                content=json.dumps({
-                                    "status": "success",
-                                    "message": "Transaction data requested"
-                                }),
-                                name=tool_name,
-                                tool_call_id=tool_id,
-                            )
-                        )
-                        continue
-                    else:
-                        outputs.append(
-                            ToolMessage(
-                                content=json.dumps({"error": str(e)}),
-                                name=tool_name,
-                                tool_call_id=tool_id,
-                            )
-                        )
+                )
             
             return {"messages": outputs}
             
@@ -211,15 +187,13 @@ class LLMBaseConnection(BaseConnection):
                 selected_tools = []
                 for tool_id in state.get("selected_tools", []):
                     tool = self.tool_registry[tool_id]
-                    logger.info(f"Tool ID: {tool_id}")
                     if tool:
                         selected_tools.append(tool)
-                
                 if not selected_tools:
                     # Fallback to using all tools if none selected
                     selected_tools = self.tools
 
-                llm_with_tools = llm.bind_tools(tools=selected_tools)
+                llm_with_tools = llm.bind_tools(tools=selected_tools, tool_choice="auto")
                 response = llm_with_tools.invoke(converted_messages)
                 
                 return {"messages": [response]}
@@ -233,9 +207,7 @@ class LLMBaseConnection(BaseConnection):
                 last_user_message = state["messages"][-1]
                 query = last_user_message.content
                 tool_documents = self.vector_store.similarity_search(query, k=2)
-                tool_documents = self.vector_store.similarity_search(query)
                 selected_tool_ids = [doc.id for doc in tool_documents if doc.id in self.tool_registry]
-                
                 if not selected_tool_ids:
                     # Fallback to using all tools
                     selected_tool_ids = list(self.tool_registry.keys())
@@ -310,59 +282,19 @@ class LLMBaseConnection(BaseConnection):
     def continue_execution(self, data: str) -> Any:
         """Continue execution based on provided data"""
         try:
-            config = {"configurable": {"thread_id": "24249321221"}}
+            config = {"configurable": {"thread_id": "23455223"}}
             
             db_uri = os.getenv('POSTGRES_DB_URI')
             if not db_uri:
                 raise ValueError("PostgreSQL connection URI not found in environment")
             
-            interrupted_tool_call_id = None
-            
             with PostgresSaver.from_conn_string(db_uri) as checkpointer:
                 checkpointer.setup()
                 graph = self.graph_builder.compile(checkpointer=checkpointer)
-                snapshot = graph.get_state(config)
-                # Process messages to find interrupted tool call
-                messages = snapshot.values["messages"]
-                for i, message in enumerate(messages):
-                    if isinstance(message, ToolMessage):
-                        try:
-                            content = json.loads(message.content)
-                            if content.get("status") == "interrupt":
-                                # Look for the next ToolMessage
-                                for next_msg in messages[i+1:]:
-                                    if isinstance(next_msg, ToolMessage):
-                                        interrupted_tool_call_id = next_msg.tool_call_id
-                                        try:
-                                            tool_message = AIMessage(
-                                                data
-                                            )
-                                            tool_message.additional_kwargs = {
-                                                "tool_call_id": interrupted_tool_call_id
-                                            }
-                                            response_command = Command(
-                                                update={
-                                                    "messages": [
-                                                        tool_message
-                                                    ],
-                                                }
-                                            )
-                                            
-                                            response_stream = graph.stream(
-                                                response_command,
-                                                config,
-                                            )
-                                        except Exception as e:
-                                            logger.error(f"Error in stream: {str(e)}")
-                                            raise
-                                        break
-                                break
-                        except json.JSONDecodeError:
-                            # Skip messages that can't be parsed as JSON
-                            continue
-                    
-                logger.info(f"Found interrupted tool call ID: {interrupted_tool_call_id}")
-                return data
+                graph.invoke(
+                    Command(resume={"data": data}), 
+                    config=config
+                )
                 
         except Exception as e:
             logger.error(f"Error in continue_execution: {str(e)}")
@@ -371,7 +303,7 @@ class LLMBaseConnection(BaseConnection):
     def interrupt_chat(self, query: str) -> Any:
         """Interrupt the current chat flow"""
         logger.info(query)
-        response = interrupt({query: "query"})
+        response = interrupt({"query": query})
         return response["data"]
 
     def _get_client(self):
@@ -428,7 +360,7 @@ You are a helpful assistant with access to various tools. When using tools:
                 "messages": messages,
             }
 
-            config = {"configurable": {"thread_id": "24249321221"}}
+            config = {"configurable": {"thread_id": "23455223"}}
             
             collected_response = []
             db_uri = os.getenv('POSTGRES_DB_URI')
@@ -449,6 +381,11 @@ You are a helpful assistant with access to various tools. When using tools:
                             messages = chunk["chatbot"]["messages"]
                             if messages and isinstance(messages[-1], (AIMessage, ToolMessage)):
                                 collected_response.append(messages[-1].content)
+                        elif "__interrupt__" in chunk:
+                            interrupt_data = chunk["__interrupt__"][0]
+                            if hasattr(interrupt_data, 'value'):
+                                interrupt_value = interrupt_data.value
+                                collected_response = [json.dumps(interrupt_value.get('query', ''))]
                         elif "tools" in chunk and "messages" in chunk["tools"]:
                             messages = chunk["tools"]["messages"]
                             for message in messages:

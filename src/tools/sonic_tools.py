@@ -105,61 +105,51 @@ class SonicTokenTransferTool(BaseTool):
     - amount: amount to send
     - token: token symbol (e.g. "S", "BTC", "ETH")
     Transfer only if "from_address" has enough balance
-    IMPORTANT: Wait for the transfer to complete before requesting transaction data. And always check for the balance before transferring, for checking balance use address as "from_address" and "token"
     """
     
-    def __init__(self, agent):
+    def __init__(self, agent, llm):
         super().__init__()
         self._agent = agent
+        self._llm = llm
     
     def _run(self, from_address: str, to_address: str, amount: float, token: str = "S") -> str:
-        try:
-            if not all([from_address, to_address, amount, token]):
-                return json.dumps({
-                    "error": "Missing required parameters"
-                })
-
-            transfer_params = {
-                "from_address": from_address,
-                "to_address": to_address,
-                "amount": float(amount)
-            }
-
-            if token.upper() == "S":
-                transfer_params["token_address"] = None
-                action_name = "send-sonic"
-            else:
-                token_lookup_result = json.loads(SonicTokenLookupTool(self._agent)._run(token))
-                if "error" in token_lookup_result:
-                    return json.dumps({"error": f"Invalid token {token}"})
-                transfer_params["token_address"] = token_lookup_result["address"]
-                action_name = "send-sonic-token"
-
-            logger.info(f"Transferring {amount} {token} to {to_address}")
-            
-            response = execute_action(
-                agent=self._agent,
-                action_name=action_name,
-                **transfer_params
-            )
-
+        if not all([from_address, to_address, amount, token]):
             return json.dumps({
-                "status": "interrupt",
-                "tx": response,
-                "details": transfer_params,
-                "next_action": "sonic_request_transaction_data"  # Added to guide sequence
+                "error": "Missing required parameters"
             })
 
-        except Exception as e:
-            logger.error(f"Transfer failed: {str(e)}")
-            return json.dumps({
-                "error": str(e),
-                "parameters": {
-                    "to_address": to_address,
-                    "amount": amount,
-                    "token": token
-                }
-            })
+        transfer_params = {
+            "from_address": from_address,
+            "to_address": to_address,
+            "amount": float(amount)
+        }
+
+        if token.upper() == "S":
+            transfer_params["token_address"] = None
+            action_name = "send-sonic"
+        else:
+            token_lookup_result = json.loads(SonicTokenLookupTool(self._agent)._run(token))
+            if "error" in token_lookup_result:
+                return json.dumps({"error": f"Invalid token {token}"})
+            transfer_params["token_address"] = token_lookup_result["address"]
+            action_name = "send-sonic-token"
+
+        logger.info(f"Transferring {amount} {token} to {to_address}")
+        
+        response = execute_action(
+            agent=self._agent,
+            action_name=action_name,
+            **transfer_params
+        )
+        tx_url = self._agent.connection_manager.connections[self._llm].interrupt_chat(
+            query=json.dumps(response)
+        )
+
+        return json.dumps({
+            "status": "success",
+            "tx": tx_url,
+            "details": transfer_params,
+        })
 
 class SonicSwapTool(BaseTool):
     name: str = "sonic_swap"
@@ -170,12 +160,12 @@ class SonicSwapTool(BaseTool):
     - from_token: token to swap from
     - to_token: token to swap to
     - amount: amount to swap
-    IMPORTANT: Wait for the transfer to complete before requesting transaction data. And always check for the balance before swapping, for checking balance use address as "from_address" and "token"
     """
 
-    def __init__(self, agent):
+    def __init__(self, agent, llm):
         super().__init__()
         self._agent = agent
+        self._llm = llm
 
     def _run(self, from_token: str, to_token: str, amount: float) -> str:
         try:
@@ -228,37 +218,12 @@ class SonicSwapTool(BaseTool):
                     "amount": amount
                 }
             })
-            
-class SonicRequestTransactionDataTool(BaseTool):
-    name: str = "sonic_request_transaction_data"
-    description: str = """
-sonic_request_transaction_data - Executed after sonic transactions are completed
-Returns the confirmed transaction data.
-Example - 1. Send 100 S to 0x123 2. Swap 100 S to BTC
-"""
-
-    def __init__(self, agent, llm):
-        super().__init__()
-        self._agent = agent
-        self._llm = llm
-
-    def _run(self) -> str:
-        logger.info("Requesting transaction data")
-        tx_data = self._agent.connection_manager.connections[self._llm].interrupt_chat(
-            query="Requestion transaction data from the user, return the confirmed transaction data."
-        )
-        return json.dumps({
-            "status": "success",
-            "transaction_data": tx_data
-        })
-
 
 def get_sonic_tools(agent, llm) -> list:
     """Return a list of all Sonic-related tools."""
     return [
         SonicTokenLookupTool(agent),
         SonicBalanceCheckTool(agent),
-        SonicTokenTransferTool(agent),
-        SonicSwapTool(agent),
-        SonicRequestTransactionDataTool(agent, llm)
+        SonicTokenTransferTool(agent, llm),
+        SonicSwapTool(agent, llm)
     ]
