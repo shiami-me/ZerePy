@@ -7,7 +7,7 @@ from typing_extensions import TypedDict
 from dotenv import load_dotenv, set_key
 from langchain.schema import HumanMessage, AIMessage, SystemMessage
 from langchain_core.messages import ToolMessage
-from langchain_postgres.vectorstores import PGVector
+from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.postgres import PostgresSaver
@@ -170,11 +170,14 @@ class LLMBaseConnection(BaseConnection):
                     continue
 
             if tool_documents:
-                self.vector_store = PGVector(
-                    embeddings=GoogleGenerativeAIEmbeddings(model="models/text-embedding-004"),
-                    collection_name=f"{self.get_llm_identifier()}-tools",
-                    connection=db_uri,
-                    use_jsonb=True,
+                # self.vector_store = PGVector(
+                #     embeddings=GoogleGenerativeAIEmbeddings(model="models/text-embedding-004"),
+                #     collection_name=f"{self.get_llm_identifier()}-tools",
+                #     connection=db_uri,
+                #     use_jsonb=True,
+                # )
+                self.vector_store = InMemoryVectorStore(
+                    embedding=GoogleGenerativeAIEmbeddings(model="models/text-embedding-004"),
                 )
                 self.vector_store.add_documents(tool_documents)
             else:
@@ -227,6 +230,7 @@ class LLMBaseConnection(BaseConnection):
             try:
                 last_user_message = state["messages"][-1]
                 query = last_user_message.content
+                tool_documents = self.vector_store.similarity_search(query, k=2)
                 tool_documents = self.vector_store.similarity_search(query)
                 selected_tool_ids = [doc.id for doc in tool_documents if doc.id in self.tool_registry]
                 
