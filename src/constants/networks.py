@@ -6,6 +6,10 @@ SONIC_NETWORKS = {
     "testnet": {
         "rpc_url": "https://rpc.blaze.soniclabs.com",
         "scanner_url": "https://testnet.sonicscan.org"
+    },
+    "tenderly": {
+        "rpc_url": "https://virtual.sonic.rpc.tenderly.co/ceec8a7e-bf67-41eb-9eee-89d5e785238f",
+        "scanner_url": "dashboard.tenderly.co/explorer/vnet/ceec8a7e-bf67-41eb-9eee-89d5e785238f"
     }
 }
 

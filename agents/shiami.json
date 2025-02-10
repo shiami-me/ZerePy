@@ -64,7 +64,7 @@
     },
     {
       "name": "sonic",
-      "network": "testnet"
+      "network": "tenderly"
     }
   ],
   "tasks": [
