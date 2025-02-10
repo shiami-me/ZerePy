@@ -22,3 +22,10 @@ POST_ECHOCHAMBER_PROMPT = ("Context:\n- Room Topic: {room_topic}\n- Tags: {tags}
                            "3. Offers fresh insights or perspectives\n4. Maintains a natural, conversational tone\n5. Keeps length between 2-4 sentences\n\nGuidelines:\n- Be specific and relevant\n- Add value to the ongoing discussion\n- Avoid generic statements\n- Use a friendly but professional tone\n- Include a question or discussion point when appropriate\n\n"
                            "The message should feel organic and contribute meaningfully to the conversation."
                            )
+
+TAVILY_SEARCH_TOOL_PROMPT = ("tavily_search: Perform a search query"
+                            "Input should be a search query string (e.g. 'latest news on AI')"
+                            "Returns the search results"
+                            "Use it whenever you need to search for information on the web."
+                            "Also, use it whenever user asks you to search the internet"
+                            )

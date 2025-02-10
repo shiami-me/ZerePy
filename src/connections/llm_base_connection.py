@@ -17,6 +17,7 @@ from src.tools.together_tools import get_together_tools
 from src.connections.base_connection import BaseConnection, Action, ActionParameter
 from langgraph.types import Command, interrupt
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from src.prompts import TAVILY_SEARCH_TOOL_PROMPT
 from langchain_core.documents import Document
 from langgraph.prebuilt import tools_condition
 
@@ -136,6 +137,7 @@ class LLMBaseConnection(BaseConnection):
                 tavily_api_key = os.getenv('TAVILY_API_KEY')
                 if tavily_api_key:
                     self.search_tool = TavilySearchResults(
+                        description=TAVILY_SEARCH_TOOL_PROMPT,
                         api_key=tavily_api_key,
                         max_results=self.config.get("max_tavily_results", 2)
                     )
@@ -411,12 +413,8 @@ You are a helpful assistant with access to various tools. When using tools:
 3. Don't mention the tool names
 4. Keep responses natural and concise
 5. Use multiple tools when needed
-6. When you need some external information or the user asks for it, use Tavily search tool when available.
-7. Use connect wallet address whenever it's needed, for example - for sonic related tools. Ask user to connect wallet if needed(only for sonic related tools except sonic_request_transaction_data).
-
-8. For Sonic transfers or swaps:
-   - Always use sonic_request_transaction_data in such transfer/swap/send operations.
-   - Do not use sonic_request_transaction_data for anything other than transfers/swaps/send
+6. When you need some external information or the user asks for internet search, use Tavily search tool when available.
+7. Use connect wallet address whenever it's needed, for example - for sonic related tools. Ask user to connect wallet if needed.
 """
             if not self.system_prompt:
                 self.system_prompt = enhanced_system_prompt
