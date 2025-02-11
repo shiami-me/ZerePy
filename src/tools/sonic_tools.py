@@ -46,6 +46,7 @@ class SonicBalanceCheckTool(BaseTool):
     Example: For "Check S balance", use: {"token": "S"}
     Also use before transfer/send/swaps to check balance
     Check balance of any token on Sonic. Input should be a JSON string with:
+    - address: sender address
     - token: token symbol (e.g. "S", "BTC", "ETH")
     """
 
@@ -53,11 +54,11 @@ class SonicBalanceCheckTool(BaseTool):
         super().__init__()
         self._agent = agent
 
-    def _run(self, token: str = "S") -> str:
+    def _run(self, address: str, token: str = "S") -> str:
         try:
             logger.info(f"Checking balance for token: {token}")
             
-            balance_params = {}
+            balance_params = {"address": address}
             
             action_name = "get-sonic-balance"
             if token.upper() == "S":

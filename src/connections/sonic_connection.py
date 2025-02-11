@@ -118,7 +118,7 @@ class SonicConnection(BaseConnection):
             "get-balance": Action(
                 name="get-balance",
                 parameters=[
-                    ActionParameter("address", False, str, "Address to check balance for"),
+                    ActionParameter("address", True, str, "Address to check balance for"),
                     ActionParameter("token_address", False, str, "Optional token address")
                 ],
                 description="Get $S or token balance"
@@ -143,20 +143,10 @@ class SonicConnection(BaseConnection):
                 return True
 
         try:
-            if not os.path.exists('.env'):
-                with open('.env', 'w') as f:
-                    f.write('')
-
-            private_key = input("\nEnter your wallet private key: ")
-            if not private_key.startswith('0x'):
-                private_key = '0x' + private_key
-            set_key('.env', 'SONIC_PRIVATE_KEY', private_key)
-
             if not self._web3.is_connected():
                 raise SonicConnectionError("Failed to connect to Sonic network")
 
-            account = self._web3.eth.account.from_key(private_key)
-            logger.info(f"\n✅ Successfully connected with address: {account.address}")
+            logger.info(f"\n✅ Successfully connected")
             return True
 
         except Exception as e:
@@ -165,12 +155,6 @@ class SonicConnection(BaseConnection):
 
     def is_configured(self, verbose: bool = False) -> bool:
         try:
-            load_dotenv()
-            if not os.getenv('SONIC_PRIVATE_KEY'):
-                if verbose:
-                    logger.error("Missing SONIC_PRIVATE_KEY in .env")
-                return False
-
             if not self._web3.is_connected():
                 if verbose:
                     logger.error("Not connected to Sonic network")
@@ -182,16 +166,9 @@ class SonicConnection(BaseConnection):
                 logger.error(f"Configuration check failed: {e}")
             return False
 
-    def get_balance(self, address: Optional[str] = None, token_address: Optional[str] = None) -> float:
+    def get_balance(self, address: str, token_address: Optional[str] = None) -> float:
         """Get balance for an address or the configured wallet"""
         try:
-            if not address:
-                private_key = os.getenv('SONIC_PRIVATE_KEY')
-                if not private_key:
-                    raise SonicConnectionError("No wallet configured")
-                account = self._web3.eth.account.from_key(private_key)
-                address = account.address
-
             if token_address:
                 contract = self._web3.eth.contract(
                     address=Web3.to_checksum_address(token_address),

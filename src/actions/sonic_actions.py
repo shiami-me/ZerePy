@@ -34,13 +34,6 @@ def get_sonic_balance(agent, **kwargs):
         address = kwargs.get("address")
         token_address = kwargs.get("token_address")
         
-        if not address:
-            load_dotenv()
-            private_key = os.getenv('SONIC_PRIVATE_KEY')
-            web3 = agent.connection_manager.connections["sonic"]._web3
-            account = web3.eth.account.from_key(private_key)
-            address = account.address
-
         balance = agent.connection_manager.connections["sonic"].get_balance(
             address=address,
             token_address=token_address
