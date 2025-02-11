@@ -19,7 +19,7 @@ from langgraph.types import Command, interrupt
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from src.prompts import TAVILY_SEARCH_TOOL_PROMPT
 from langchain_core.documents import Document
-from langgraph.prebuilt import tools_condition
+from langgraph.prebuilt import tools_condition, ToolNode
 
 logger = logging.getLogger("connections.llm_base_connection")
 
@@ -27,68 +27,6 @@ class State(TypedDict):
     """Type for tracking conversation state"""
     messages: Annotated[list, add_messages]
     selected_tools: list[str]
-
-class BasicToolNode:
-    """Tool execution node for LangGraph"""
-    def __init__(self, tools: list) -> None:
-        self.tools_by_name = {tool.name: tool for tool in tools}
-        logger.debug(f"Initialized tools: {list(self.tools_by_name.keys())}")
-
-    def __call__(self, inputs: dict):
-        try:
-            messages = inputs.get("messages", [])
-            if not messages:
-                raise ValueError("No message found in input")
-            
-            message = messages[-1]
-            outputs = []
-            
-            tool_calls = getattr(message, "tool_calls", None)
-            if tool_calls is None and hasattr(message, "additional_kwargs"):
-                tool_calls = message.additional_kwargs.get("tool_calls", [])
-            
-            if not tool_calls:
-                logger.warning("No tool calls found in message")
-                return {"messages": outputs}
-            
-            for tool_call in tool_calls:
-                logger.debug(f"Processing tool call: {tool_call}")
-                
-                if isinstance(tool_call, dict):
-                    tool_name = tool_call.get("name")
-                    tool_args = tool_call.get("args")
-                    tool_id = tool_call.get("id", "default_id")
-                else:
-                    tool_name = tool_call.name
-                    tool_args = tool_call.args
-                    tool_id = getattr(tool_call, "id", "default_id")
-                
-                if tool_name not in self.tools_by_name:
-                    logger.error(f"Tool not found: {tool_name}")
-                    continue
-                
-                tool_result = self.tools_by_name[tool_name].invoke(tool_args)
-                logger.debug(f"Tool result: {tool_result}")
-                
-                tool_content = (
-                    json.dumps(tool_result) 
-                    if not isinstance(tool_result, str) 
-                    else tool_result
-                )
-                
-                outputs.append(
-                    ToolMessage(
-                        content=tool_content,
-                        name=tool_name,
-                        tool_call_id=tool_id,
-                    )
-                )
-            
-            return {"messages": outputs}
-            
-        except Exception as e:
-            logger.error(f"Error in BasicToolNode: {e}")
-            raise
 
 class LLMBaseConnection(BaseConnection):
     """Base class for LLM connections with common functionality"""
@@ -206,7 +144,7 @@ class LLMBaseConnection(BaseConnection):
             try:
                 last_user_message = state["messages"][-1]
                 query = last_user_message.content
-                tool_documents = self.vector_store.similarity_search(query, k=2)
+                tool_documents = self.vector_store.similarity_search(query, k=3)
                 selected_tool_ids = [doc.id for doc in tool_documents if doc.id in self.tool_registry]
                 if not selected_tool_ids:
                     # Fallback to using all tools
@@ -220,7 +158,7 @@ class LLMBaseConnection(BaseConnection):
         graph_builder = StateGraph(State)
         graph_builder.add_node("chatbot", chatbot)
         graph_builder.add_node("route_tools", route_tools)
-        tool_node = BasicToolNode(tools=self.tools)
+        tool_node = ToolNode(tools=self.tools)
         graph_builder.add_node("tools", tool_node)
         graph_builder.add_conditional_edges("chatbot", tools_condition, path_map=["tools", "__end__"])
         graph_builder.add_edge("tools", "chatbot")
@@ -282,7 +220,7 @@ class LLMBaseConnection(BaseConnection):
     def continue_execution(self, data: str) -> Any:
         """Continue execution based on provided data"""
         try:
-            config = {"configurable": {"thread_id": "23455223"}}
+            config = {"configurable": {"thread_id": "222"}}
             
             db_uri = os.getenv('POSTGRES_DB_URI')
             if not db_uri:
@@ -360,7 +298,7 @@ You are a helpful assistant with access to various tools. When using tools:
                 "messages": messages,
             }
 
-            config = {"configurable": {"thread_id": "23455223"}}
+            config = {"configurable": {"thread_id": "222"}}
             
             collected_response = []
             db_uri = os.getenv('POSTGRES_DB_URI')

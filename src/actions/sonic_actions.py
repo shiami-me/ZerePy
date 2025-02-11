@@ -103,16 +103,40 @@ def send_sonic_token(agent, **kwargs):
         logger.error(f"Failed to send tokens: {str(e)}")
         return None
 
+@register_action("get-swap-summary")
+def get_swap_summary(agent, **kwargs):
+    """Get summary of swap on Sonic chain"""
+    try:
+        
+        token_in = kwargs.get("token_in")
+        token_out = kwargs.get("token_out") 
+        amount = float(kwargs.get("amount"))
+
+        route_data = agent.connection_manager.connections["sonic"]._get_swap_route(
+            token_in=token_in,
+            token_out=token_out,
+            amount_in=amount
+        )
+
+        return route_data["routeSummary"]
+
+    except Exception as e:
+        logger.error(f"Failed to get summary: {str(e)}")
+        return None
+
+
 @register_action("swap-sonic")
 def swap_sonic(agent, **kwargs):
     """Swap tokens on Sonic chain"""
     try:
+        sender  = kwargs.get("sender")
         token_in = kwargs.get("token_in")
         token_out = kwargs.get("token_out") 
         amount = float(kwargs.get("amount"))
         slippage = float(kwargs.get("slippage", 0.5))
 
         tx_url = agent.connection_manager.connections["sonic"].swap(
+            sender=sender,
             token_in=token_in,
             token_out=token_out,
             amount=amount,
@@ -120,7 +144,6 @@ def swap_sonic(agent, **kwargs):
         )
 
         logger.info(f"Swapping {amount} tokens")
-        logger.info(f"Transaction URL: {tx_url}")
         return tx_url
 
     except Exception as e:

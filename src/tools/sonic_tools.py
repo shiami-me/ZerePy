@@ -141,12 +141,14 @@ class SonicTokenTransferTool(BaseTool):
             action_name=action_name,
             **transfer_params
         )
+        response["type"] = "transfer"
         tx_url = self._agent.connection_manager.connections[self._llm].interrupt_chat(
             query=json.dumps(response)
         )
 
         return json.dumps({
             "status": "success",
+            "type": "transfer",
             "tx": tx_url,
             "details": transfer_params,
         })
@@ -157,6 +159,7 @@ class SonicSwapTool(BaseTool):
     sonic_swap: Swap tokens
     Example: For "Swap 100 S to BTC", use: {"from_token": "S", "to_token": "BTC", "amount": 100}
     Swap between any tokens on Sonic. Input should be a JSON string with:
+    - from_address: sender address
     - from_token: token to swap from
     - to_token: token to swap to
     - amount: amount to swap
@@ -167,57 +170,58 @@ class SonicSwapTool(BaseTool):
         self._agent = agent
         self._llm = llm
 
-    def _run(self, from_token: str, to_token: str, amount: float) -> str:
-        try:
-            if not all([from_token, to_token, amount]):
-                return json.dumps({
-                    "error": "Missing required parameters"
-                })
-
-            swap_params = {"amount": float(amount)}
-
-            # Handle from_token
-            if from_token.upper() == "S":
-                swap_params["from_token_address"] = None
-            else:
-                from_token_lookup = json.loads(SonicTokenLookupTool(self._agent)._run(from_token))
-                if "error" in from_token_lookup:
-                    return json.dumps({"error": f"Invalid from_token {from_token}"})
-                swap_params["from_token_address"] = from_token_lookup["address"]
-
-            # Handle to_token
-            if to_token.upper() == "S":
-                swap_params["to_token_address"] = None
-            else:
-                to_token_lookup = json.loads(SonicTokenLookupTool(self._agent)._run(to_token))
-                if "error" in to_token_lookup:
-                    return json.dumps({"error": f"Invalid to_token {to_token}"})
-                swap_params["to_token_address"] = to_token_lookup["address"]
-
-            logger.info(f"Swapping {amount} {from_token} to {to_token}")
-            
-            # response = execute_action(
-            #     agent=self._agent,
-            #     action_name="swap-sonic",
-            #     **swap_params
-            # )
-
+    def _run(self, from_address: str, from_token: str, to_token: str, amount: float) -> str:
+        if not all([from_address, from_token, to_token, amount]):
             return json.dumps({
-                "status": "success",
-                "transaction_url": "uri",
-                "details": swap_params
+                "error": "Missing required parameters"
             })
 
-        except Exception as e:
-            logger.error(f"Swap failed: {str(e)}")
-            return json.dumps({
-                "error": str(e),
-                "parameters": {
-                    "from_token": from_token,
-                    "to_token": to_token,
-                    "amount": amount
-                }
-            })
+        swap_params = {"amount": float(amount), "sender": from_address}
+
+        # Handle from_token
+        if from_token.upper() == "S":
+            swap_params["token_in"] = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
+        else:
+            from_token_lookup = json.loads(SonicTokenLookupTool(self._agent)._run(from_token))
+            if "error" in from_token_lookup:
+                return json.dumps({"error": f"Invalid from_token {from_token}"})
+            swap_params["token_in"] = from_token_lookup["address"]
+
+        # Handle to_token
+        if to_token.upper() == "S":
+            swap_params["token_out"] = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
+        else:
+            to_token_lookup = json.loads(SonicTokenLookupTool(self._agent)._run(to_token))
+            if "error" in to_token_lookup:
+                return json.dumps({"error": f"Invalid to_token {to_token}"})
+            swap_params["token_out"] = to_token_lookup["address"]
+
+        logger.info(f"Swapping {amount} {from_token} to {to_token}")
+        
+        route_summary = execute_action(
+            agent=self._agent,
+            action_name="get-swap-summary",
+            **swap_params
+        )
+        response = execute_action(
+            agent=self._agent,
+            action_name="swap-sonic",
+            **swap_params
+        )
+        output = {
+            "approve": route_summary,
+            "swap": response
+        }
+        tx_url = self._agent.connection_manager.connections[self._llm].interrupt_chat(
+            query=json.dumps(output)
+        )
+        
+        return json.dumps({
+            "status": "success",
+            "type": "swap",
+            "tx": tx_url,
+            "details": swap_params
+        })
 
 def get_sonic_tools(agent, llm) -> list:
     """Return a list of all Sonic-related tools."""
