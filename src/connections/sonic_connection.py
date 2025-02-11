@@ -198,14 +198,13 @@ class SonicConnection(BaseConnection):
                 decimals = contract.functions.decimals().call()
                 amount_raw = int(amount * (10 ** decimals))
                 
-                tx = contract.functions.transfer(
-                    Web3.to_checksum_address(to_address),
-                    amount_raw
-                ).build_transaction({
+                tx = {
+                    'to': token_address,
+                    'data': contract.encodeABI(fn_name="transfer", args=[Web3.to_checksum_address(to_address), amount_raw]),
                     'from': from_address,
                     'gasPrice': self._web3.eth.gas_price,
                     'chainId': chain_id
-                })
+                }
             else:
                 tx = {
                     'to': Web3.to_checksum_address(to_address),
