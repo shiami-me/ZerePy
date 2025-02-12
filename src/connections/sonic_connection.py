@@ -309,7 +309,7 @@ class SonicConnection(BaseConnection):
             logger.error(f"Approval failed: {e}")
             raise
 
-    def swap(self, sender: str, token_in: str, token_out: str, amount: float, slippage: float = 0.5) -> Dict:
+    def swap(self, sender: str, token_in: str, token_out: str, amount: float, slippage: float = 5.0) -> Dict:
         """Execute a token swap using the KyberSwap router"""
         try:
             # Check token balance before proceeding
@@ -329,19 +329,6 @@ class SonicConnection(BaseConnection):
             
             # Get router address from route data
             router_address = route_data["routerAddress"]
-            
-            # Handle token approval if not using native token
-            if token_in.lower() != self.NATIVE_TOKEN.lower():
-                if token_in.lower() == "0x039e2fb66102314ce7b64ce5ce3e5183bc94ad38".lower():  # $S token
-                    amount_raw = self._web3.to_wei(amount, 'ether')
-                else:
-                    token_contract = self._web3.eth.contract(
-                        address=Web3.to_checksum_address(token_in),
-                        abi=self.ERC20_ABI
-                    )
-                    decimals = token_contract.functions.decimals().call()
-                    amount_raw = int(amount * (10 ** decimals))
-                self._handle_token_approval(sender, token_in, router_address, amount_raw)
             
             # Prepare transaction
             tx = {
