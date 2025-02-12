@@ -111,7 +111,7 @@ def get_swap_summary(agent, **kwargs):
             amount_in=amount
         )
 
-        return route_data["routeSummary"]
+        return {**route_data["routeSummary"], "routerAddress": route_data["routerAddress"]}
 
     except Exception as e:
         logger.error(f"Failed to get summary: {str(e)}")
