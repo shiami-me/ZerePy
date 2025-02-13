@@ -54,46 +54,46 @@ class SonicBalanceCheckTool(BaseTool):
         super().__init__()
         self._agent = agent
 
-    def _run(self, address: str, token: str = "S") -> str:
-        try:
-            logger.info(f"Checking balance for token: {token}")
-            
-            balance_params = {"address": address}
-            
-            action_name = "get-sonic-balance"
-            if token.upper() == "S":
-                balance_params["token_address"] = None
-            else:
-                token_lookup_result = json.loads(SonicTokenLookupTool(self._agent)._run(token))
-                if "error" in token_lookup_result:
-                    return json.dumps({"error": f"Invalid token {token}"})
-                balance_params["token_address"] = token_lookup_result["address"]
+def _run(self, address: str, token: str = None) -> str:
+    try:
+        logger.info(f"Checking balance for token: {token}")
+        
+        balance_params = {"address": address}
+        
+        action_name = "get-sonic-balance"
+        if token is None or token.upper() == "S":
+            balance_params["token_address"] = None
+        else:
+            token_lookup_result = json.loads(SonicTokenLookupTool(self._agent)._run(token))
+            if "error" in token_lookup_result:
+                return json.dumps({"error": f"Invalid token {token}"})
+            balance_params["token_address"] = token_lookup_result["address"]
 
-            response = execute_action(
-                agent=self._agent,
-                action_name=action_name,
-                **balance_params
-            )
+        response = execute_action(
+            agent=self._agent,
+            action_name=action_name,
+            **balance_params
+        )
 
-            if not response:
-                if response != 0:
-                    return json.dumps({"error": f"Could not fetch balance for {token}"})
+        if not response:
+            if response != 0:
+                return json.dumps({"error": f"Could not fetch balance for {token}"})
 
-            return json.dumps({
-                "status": "success",
-                "balance": str(response),
-                "token": token,
-                "details": balance_params
-            })
+        return json.dumps({
+            "status": "success",
+            "balance": str(response),
+            "token": token,
+            "details": balance_params
+        })
 
-        except Exception as e:
-            logger.error(f"Balance check failed: {str(e)}")
-            return json.dumps({
-                "error": str(e),
-                "parameters": {
-                    "token": token
-                }
-            })
+    except Exception as e:
+        logger.error(f"Balance check failed: {str(e)}")
+        return json.dumps({
+            "error": str(e),
+            "parameters": {
+                "token": token
+            }
+        })
 
 class SonicTokenTransferTool(BaseTool):
     name: str = "sonic_token_transfer"
@@ -113,46 +113,46 @@ class SonicTokenTransferTool(BaseTool):
         self._agent = agent
         self._llm = llm
     
-    def _run(self, from_address: str, to_address: str, amount: float, token: str = "S") -> str:
-        if not all([from_address, to_address, amount, token]):
-            return json.dumps({
-                "error": "Missing required parameters"
-            })
-
-        transfer_params = {
-            "from_address": from_address,
-            "to_address": to_address,
-            "amount": float(amount)
-        }
-
-        if token.upper() == "S":
-            transfer_params["token_address"] = None
-            action_name = "send-sonic"
-        else:
-            token_lookup_result = json.loads(SonicTokenLookupTool(self._agent)._run(token))
-            if "error" in token_lookup_result:
-                return json.dumps({"error": f"Invalid token {token}"})
-            transfer_params["token_address"] = token_lookup_result["address"]
-            action_name = "send-sonic-token"
-
-        logger.info(f"Transferring {amount} {token} to {to_address}")
-        
-        response = execute_action(
-            agent=self._agent,
-            action_name=action_name,
-            **transfer_params
-        )
-        response["type"] = "transfer"
-        tx_url = self._agent.connection_manager.connections[self._llm].interrupt_chat(
-            query=json.dumps(response)
-        )
-
+def _run(self, from_address: str, to_address: str, amount: float, token: str = None) -> str:
+    if not all([from_address, to_address, amount, token]):
         return json.dumps({
-            "status": "success",
-            "type": "transfer",
-            "tx": tx_url,
-            "details": transfer_params,
+            "error": "Missing required parameters"
         })
+
+    transfer_params = {
+        "from_address": from_address,
+        "to_address": to_address,
+        "amount": float(amount)
+    }
+
+    if token is None or token.upper() == "S":
+        transfer_params["token_address"] = None
+        action_name = "send-sonic"
+    else:
+        token_lookup_result = json.loads(SonicTokenLookupTool(self._agent)._run(token))
+        if "error" in token_lookup_result:
+            return json.dumps({"error": f"Invalid token {token}"})
+        transfer_params["token_address"] = token_lookup_result["address"]
+        action_name = "send-sonic-token"
+
+    logger.info(f"Transferring {amount} {token} to {to_address}")
+    
+    response = execute_action(
+        agent=self._agent,
+        action_name=action_name,
+        **transfer_params
+    )
+    response["type"] = "transfer"
+    tx_url = self._agent.connection_manager.connections[self._llm].interrupt_chat(
+        query=json.dumps(response)
+    )
+
+    return json.dumps({
+        "status": "success",
+        "type": "transfer",
+        "tx": tx_url,
+        "details": transfer_params,
+    })
 
 class SonicSwapTool(BaseTool):
     name: str = "sonic_swap"

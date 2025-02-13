@@ -25,32 +25,31 @@ class AssetLender:
             headers = {"Content-Type": "application/json"}
             payload = json.dumps({"account": str(wallet.pubkey())})
 
-            session = aiohttp.ClientSession()
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, data=payload) as response:
+                    if response.status != 200:
+                        raise Exception(f"Lulo API Error: {response.status}")
+                    data = await response.json()
+                    logger.debug(f"Lending data: {data}")
+                transaction_data = base64.b64decode(data["transaction"])
+                raw_transaction = VersionedTransaction.from_bytes(transaction_data)
+                signature = wallet.sign_message(
+                    message.to_bytes_versioned(raw_transaction.message)
+                )
+                signed_txn = VersionedTransaction.populate(
+                    raw_transaction.message, [signature]
+                )
+                opts = TxOpts(skip_preflight=False, preflight_commitment=Processed)
+                result = await async_client.send_raw_transaction(
+                    txn=bytes(signed_txn), opts=opts
+                )
+                transaction_id = json.loads(result.to_json())["result"]
 
-            async with session.post(url, headers=headers, data=payload) as response:
-                if response.status != 200:
-                    raise Exception(f"Lulo API Error: {response.status}")
-                data = await response.json()
-                logger.debug(f"Lending data: {data}")
-            transaction_data = base64.b64decode(data["transaction"])
-            raw_transaction = VersionedTransaction.from_bytes(transaction_data)
-            signature = wallet.sign_message(
-                message.to_bytes_versioned(raw_transaction.message)
-            )
-            signed_txn = VersionedTransaction.populate(
-                raw_transaction.message, [signature]
-            )
-            opts = TxOpts(skip_preflight=False, preflight_commitment=Processed)
-            result = await async_client.send_raw_transaction(
-                txn=bytes(signed_txn), opts=opts
-            )
-            transaction_id = json.loads(result.to_json())["result"]
-
-            logger.debug(
-                f"Transaction sent: https://explorer.solana.com/tx/{transaction_id}"
-            )
-            await session.close()
-            return str(signature)
+                logger.debug(
+                    f"Transaction sent: https://explorer.solana.com/tx/{transaction_id}"
+                )
+                return str(signature)
 
         except Exception as e:
             raise Exception(f"Lending failed: {str(e)}")
+

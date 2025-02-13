@@ -88,6 +88,14 @@ class ZerePyServer:
         self.setup_routes()
 
     def setup_routes(self):
+        # Include API routers
+        from .routes.tools import router as tools_router
+        from .routes.agents import router as agents_router
+        from .routes.llm import router as llm_router
+        
+        self.app.include_router(tools_router)
+        self.app.include_router(agents_router)
+        self.app.include_router(llm_router)
         @self.app.get("/")
         async def root():
             """Server status endpoint"""

@@ -377,8 +377,10 @@ class ZerePyCLI:
 
     def clear_screen(self, input_list: List[str]) -> None:
         """Clear the terminal screen"""
-        os.system('cls' if os.name == 'nt' else 'clear')
+        cmd = ['cls'] if os.name == 'nt' else ['clear']
+        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self._print_welcome_message(clearing=True)
+# import subprocess
 
     def agent_action(self, input_list: List[str]) -> None:
         """Handle agent action command"""

@@ -14,10 +14,11 @@ def eternai_generate(agent, **kwargs):
             params=[
                 kwargs.get('prompt'),
                 kwargs.get('system_prompt', agent._construct_system_prompt()),
-                kwargs.get('model', None)
+                kwargs.get('model')
             ]
         )
         agent.logger.info("✅ Text generation completed!")
+
         return result
     except Exception as e:
         agent.logger.error(f"❌ Text generation failed: {str(e)}")

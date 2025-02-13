@@ -14,10 +14,11 @@ def sol_transfer(agent, **kwargs):
             params=[
                 kwargs.get('to_address'),
                 kwargs.get('amount'),
-                kwargs.get('token_mint', None)
+                kwargs.get('token_mint')
             ]
         )
         agent.logger.info("✅ Transfer completed!")
+
         return result
     except Exception as e:
         agent.logger.error(f"❌ Transfer failed: {str(e)}")
@@ -34,10 +35,11 @@ def sol_swap(agent, **kwargs):
             params=[
                 kwargs.get('output_mint'),
                 kwargs.get('input_amount'),
-                kwargs.get('input_mint', None),
+                kwargs.get('input_mint'),
                 kwargs.get('slippage_bps', 100)
             ]
         )
+
         agent.logger.info("✅ Swap completed!")
         return result
     except Exception as e:
@@ -52,10 +54,11 @@ def sol_balance(agent, **kwargs):
         result = agent.connection_manager.perform_action(
             connection_name="solana",
             action_name="get-balance",
-            params=[kwargs.get('token_address', None)]
+            params=[kwargs.get('token_address')]
         )
         agent.logger.info(f"Balance: {result}")
         return result
+
     except Exception as e:
         agent.logger.error(f"❌ Balance check failed: {str(e)}")
         return None

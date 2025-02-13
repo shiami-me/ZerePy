@@ -222,3 +222,5 @@ class TogetherAIConnection(BaseConnection):
             return loop.run_until_complete(method(**kwargs))
         except Exception as e:
             raise TogetherAIAPIError(f"Action failed: {str(e)}")
+        finally:
+            loop.close()

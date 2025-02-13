@@ -319,12 +319,12 @@ class EthereumConnection(BaseConnection):
                     eth_value = float(data.get("data", {}).get("amountOut", 0))
                     eth_value = self._web3.from_wei(eth_value, 'ether')
                     return token_balance
-            except Exception:
-                # Silently fail price check
-                pass
+            except Exception as e:
+                logging.exception("Include relevant information about the exception here", e, stack_info=True, exc_info=True)  # import logging
             
             return token_balance
         
+
         except Exception as e:
             return False
 

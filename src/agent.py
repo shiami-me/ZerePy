@@ -26,7 +26,8 @@ class ZerePyAgent:
     ):
         try:
             agent_path = Path("agents") / f"{agent_name}.json"
-            agent_dict = json.load(open(agent_path, "r"))
+            with open(agent_path, "r") as f:
+                agent_dict = json.load(f)
 
             missing_fields = [field for field in REQUIRED_FIELDS if field not in agent_dict]
             if missing_fields:
@@ -154,7 +155,7 @@ class ZerePyAgent:
         task_weights = [weight for weight in self.task_weights.copy()]
         
         if use_time_based_weights:
-            current_hour = datetime.now().hour
+            current_hour = datetime.now(time.timezone.utc).hour 
             task_weights = self._adjust_weights_for_time(current_hour, task_weights)
         
         return random.choices(self.tasks, weights=task_weights, k=1)[0]
