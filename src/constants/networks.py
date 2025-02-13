@@ -8,8 +8,8 @@ SONIC_NETWORKS = {
         "scanner_url": "https://testnet.sonicscan.org"
     },
     "tenderly": {
-        "rpc_url": "https://virtual.sonic.rpc.tenderly.co/ceec8a7e-bf67-41eb-9eee-89d5e785238f",
-        "scanner_url": "dashboard.tenderly.co/explorer/vnet/ceec8a7e-bf67-41eb-9eee-89d5e785238f"
+        "rpc_url": "https://virtual.sonic.rpc.tenderly.co/3ce9a6f9-6e60-4f43-b85f-2d87187146d5",
+        "scanner_url": "dashboard.tenderly.co/explorer/vnet/3ce9a6f9-6e60-4f43-b85f-2d87187146d5"
     }
 }
 

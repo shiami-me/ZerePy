@@ -14,6 +14,7 @@ from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.graph import StateGraph, START, END
 from src.tools.sonic_tools import get_sonic_tools
 from src.tools.together_tools import get_together_tools
+from src.tools.silo_tools import get_silo_tools
 from src.connections.base_connection import BaseConnection, Action, ActionParameter
 from langgraph.types import Command, interrupt
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -59,7 +60,11 @@ class LLMBaseConnection(BaseConnection):
             
             if "sonic" in self.config.get("plugins", []):
                 sonic_tools = get_sonic_tools(agent=self._agent, llm=self.get_llm_identifier())
-                self.tools.extend(sonic_tools)       
+                self.tools.extend(sonic_tools)   
+            
+            if "silo" in self.config.get("plugins", []):
+                silo_tools = get_silo_tools(agent=self._agent, llm=self.get_llm_identifier())
+                self.tools.extend(silo_tools)       
         
             if "image" in self.config.get("plugins", []):
                 image_tools = get_together_tools(self._agent)

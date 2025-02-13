@@ -14,6 +14,7 @@ from src.connections.echochambers_connection import EchochambersConnection
 from src.connections.solana_connection import SolanaConnection
 from src.connections.hyperbolic_connection import HyperbolicConnection
 from src.connections.gemini_connection import GeminiConnection
+from src.connections.silo_connection import SiloConnection
 from src.connections.together_ai_connection import TogetherAIConnection
 from src.connections.galadriel_connection import GaladrielConnection
 from src.connections.sonic_connection import SonicConnection
@@ -50,6 +51,8 @@ class ConnectionManager:
             return EternalAIConnection
         elif class_name == "together":
             return TogetherAIConnection
+        elif class_name == "silo":
+            return SiloConnection
         elif class_name == "gemini":
             return GeminiConnection
         elif class_name == "ollama":

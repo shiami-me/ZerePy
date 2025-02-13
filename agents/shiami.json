@@ -53,7 +53,7 @@
       "model": "gemini-1.5-flash",
       "tavily": true,
       "max_tavily_results": 3,
-      "plugins": ["sonic", "image"]
+      "plugins": ["sonic", "image", "silo"]
     },
     {
       "name": "browser_use",
@@ -64,6 +64,10 @@
     },
     {
       "name": "sonic",
+      "network": "tenderly"
+    },
+    {
+      "name": "silo",
       "network": "tenderly"
     }
   ],
