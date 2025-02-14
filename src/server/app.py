@@ -111,18 +111,6 @@ class ZerePyServer:
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.post("/agents/{name}/load")
-        async def load_agent(name: str):
-            """Load a specific agent"""
-            try:
-                self.state.cli._load_agent_from_file(name)
-                return {
-                    "status": "success",
-                    "agent": name
-                }
-            except Exception as e:
-                raise HTTPException(status_code=400, detail=str(e))
-
         @self.app.get("/connections")
         async def list_connections():
             """List all available connections"""

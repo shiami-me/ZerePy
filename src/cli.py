@@ -32,7 +32,7 @@ class Command:
 
 class ZerePyCLI:
     def __init__(self):
-        self.agent = None
+        self.agent = ZerePyAgent("shiami")
         
         # Create config directory if it doesn't exist
         self.config_dir = Path.home() / '.zerepy'
