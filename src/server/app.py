@@ -188,17 +188,6 @@ class ZerePyServer:
             
             # Return the image file
             return FileResponse(image.file_path)
-        
-        # @self.app.get("/api/images")
-        # async def list_images(
-        #     skip: int = 0, 
-        #     limit: int = 10, 
-        #     db: Session = Depends(get_db)
-        # ):
-        #     """Get list of generated images with their metadata"""
-        #     images = db.query(GeneratedImage).offset(skip).limit(limit).all()
-        #     return images
-        
 
 def create_app():
     server = ZerePyServer()
