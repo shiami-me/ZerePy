@@ -1,15 +1,37 @@
 from typing import Dict, Any, List
 import json
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
+from langchain.tools import BaseTool
+from pydantic import BaseModel, Field
+
 from ..agent import ZerePyAgent
 from ..actions.price_prediction_workflow import PricePredictionWorkflow
 
-class PricePredictionAgent(ZerePyAgent):
+class PricePredictionAgent(ZerePyAgent, BaseTool):
     """Agent specialized in cryptocurrency price prediction"""
     
+    name: str = "price_prediction_agent"
+    description: str = "Predict cryptocurrency prices using technical and sentiment analysis"
+    
+    class Input(BaseModel):
+        coin_ids: List[str] = Field(description="List of cryptocurrency IDs to analyze")
+        detailed: bool = Field(default=False, description="Whether to return detailed analysis")
+    
+    def _run(self, coin_ids: List[str], detailed: bool = False) -> Dict[str, Any]:
+        """Synchronous method for running the tool"""
+        async def run_analysis():
+            return await self.perform_price_analysis(coin_ids)
+        
+        return asyncio.run(run_analysis())
+    
+    async def _arun(self, coin_ids: List[str], detailed: bool = False) -> Dict[str, Any]:
+        """Asynchronous method for running the tool"""
+        return await self.perform_price_analysis(coin_ids)
+    
     def __init__(self, agent_config_path: str):
-        super().__init__(agent_config_path)
+        ZerePyAgent.__init__(self, agent_config_path)
+        BaseTool.__init__(self)
         self.workflow = PricePredictionWorkflow()
         
     async def analyze_price(self, coin_id: str) -> Dict[str, Any]:
@@ -30,7 +52,7 @@ class PricePredictionAgent(ZerePyAgent):
                 "percent_change": percent_change,
                 "sentiment_score": prediction["sentiment_score"],
                 "confidence": self._calculate_confidence(result),
-                "timestamp": datetime.now(timezone.utc).isoformat(), # from datetime import timezone
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "analysis_details": result["workflow_analysis"]
             }
             

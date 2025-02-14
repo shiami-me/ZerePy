@@ -8,6 +8,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import MinMaxScaler
 from textblob import TextBlob
 from bs4 import BeautifulSoup
+from langchain.tools import BaseTool
 
 class RateLimiter:
     def __init__(self, calls_per_minute):
@@ -29,7 +30,7 @@ class RateLimiter:
         
         self.calls.append(now)
 
-class PricePredictionTools:
+class PricePredictionTools(BaseTool):
     def __init__(self):
         self.coingecko_limiter = RateLimiter(30)  # CoinGecko free tier: 30 calls/minute
         

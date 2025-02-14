@@ -3,12 +3,44 @@ import aiohttp
 from bs4 import BeautifulSoup
 from typing import List, Dict, Optional
 import logging
+from langchain.tools import BaseTool
+from pydantic import BaseModel, Field
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class SocialMediaCollector:
+class SocialMediaCollector(BaseTool):
+    name: str = "social_media_collector"
+    description: str = "Collect social media posts about cryptocurrencies from Twitter and Reddit"
+    
+    class Input(BaseModel):
+        query: str = Field(description="Cryptocurrency or topic to search")
+        max_posts: int = Field(default=10, description="Maximum number of posts to retrieve")
+        subreddits: Optional[List[str]] = Field(default=None, description="Optional list of subreddits to search")
+
+    def _run(self, query: str, max_posts: int = 10, subreddits: Optional[List[str]] = None) -> Dict:
+        """Synchronous method for running the tool"""
+        async def collect_data():
+            twitter_posts = await self.get_twitter_posts(query, max_posts)
+            reddit_posts = await self.get_reddit_posts(subreddits or [], query, max_posts) if subreddits else []
+            return {
+                'twitter_posts': twitter_posts,
+                'reddit_posts': reddit_posts
+            }
+        
+        return asyncio.run(collect_data())
+
+    async def _arun(self, query: str, max_posts: int = 10, subreddits: Optional[List[str]] = None) -> Dict:
+        """Asynchronous method for running the tool"""
+        twitter_posts = await self.get_twitter_posts(query, max_posts)
+        reddit_posts = await self.get_reddit_posts(subreddits or [], query, max_posts) if subreddits else []
+        return {
+            'twitter_posts': twitter_posts,
+            'reddit_posts': reddit_posts
+        }
+
     def __init__(self):
+        super().__init__()
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
