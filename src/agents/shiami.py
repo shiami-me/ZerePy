@@ -1,7 +1,7 @@
 import logging
+from pydantic import BaseModel
 
-from typing import Literal, Annotated, Union
-from typing_extensions import TypedDict
+from typing import Literal
 
 from langgraph.graph import StateGraph, MessagesState, START, END
 from langgraph.types import Command
@@ -13,6 +13,9 @@ logger = logging.getLogger("agent/shiami")
 class State(MessagesState):
     next: str
 
+class Router(BaseModel):
+    """Worker to route to next. If no workers needed, route to FINISH."""
+    next: Literal["python_repl", "text", "FINISH"]
 
 class Shiami:
     def __init__(self, agents: list[str], llm, prompts: dict[str, str]):
@@ -25,11 +28,6 @@ class Shiami:
             " respond with FINISH."
         )
 
-        class Router(TypedDict):
-            """Worker to route to next. If no workers needed, route to FINISH."""
-
-            next: Literal[*agents, "FINISH"]
-        self.router = Router
         self._llm = llm
         self._prompts = prompts
         self.graph = self.create_graph()
@@ -53,8 +51,8 @@ class Shiami:
         ] + state["messages"]
 
         response = self._llm.with_structured_output(
-            self.router()).invoke(messages)
-        goto = response["next"]
+            Router).invoke(messages)
+        goto = response.next
         if goto == "FINISH":
             goto = END
 
