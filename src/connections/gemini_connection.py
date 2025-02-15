@@ -21,8 +21,8 @@ class GeminiAPIError(GeminiConnectionError):
     pass
 
 class GeminiConnection(LLMBaseConnection):
-    def __init__(self, config: Dict[str, Any], agent):
-        super().__init__(config, agent)
+    def __init__(self, config: Dict[str, Any], agent, tools: bool = True):
+        super().__init__(config, agent, tools)
 
     def get_llm_identifier(self) -> str:
         return "gemini"

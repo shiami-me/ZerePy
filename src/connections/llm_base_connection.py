@@ -2,7 +2,7 @@ import logging
 import os
 import json
 import uuid
-from typing import Dict, Any, Annotated
+from typing import Dict, Any, Annotated, Optional
 from typing_extensions import TypedDict
 from dotenv import load_dotenv, set_key
 from langchain.schema import HumanMessage, AIMessage, SystemMessage
@@ -32,16 +32,18 @@ class State(TypedDict):
 class LLMBaseConnection(BaseConnection):
     """Base class for LLM connections with common functionality"""
     
-    def __init__(self, config: Dict[str, Any], agent):
+    def __init__(self, config: Dict[str, Any], agent = Optional, tools: bool = True):
         super().__init__(config)
         self._client = None
         self.system_prompt = None
-        self.search_tool = None
-        self.tools = []
-        self._agent = agent
-        self.register_actions()
-        self.setup_tools()
-        self.graph_builder = self._create_conversation_graph()
+        logger.info(tools)
+        if tools:
+            self.search_tool = None
+            self.tools = []
+            self._agent = agent
+            self.register_actions()
+            self.setup_tools()
+            self.graph_builder = self._create_conversation_graph()
 
     def setup_tools(self):
         """Initialize tools for the connection"""
@@ -328,7 +330,7 @@ You are a helpful assistant with access to various tools. When using tools:
                             interrupt_data = chunk["__interrupt__"][0]
                             if hasattr(interrupt_data, 'value'):
                                 interrupt_value = interrupt_data.value
-                                collected_response = [json.dumps(interrupt_value.get('query', ''))]
+                                collected_response = [interrupt_value.get('query', '')]
                         elif "tools" in chunk and "messages" in chunk["tools"]:
                             messages = chunk["tools"]["messages"]
                             for message in messages:

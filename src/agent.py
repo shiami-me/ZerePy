@@ -41,7 +41,8 @@ class ZerePyAgent:
             self.connection_manager = ConnectionManager(self, agent_dict["config"])
             self.use_time_based_weights = agent_dict["use_time_based_weights"]
             self.time_based_multipliers = agent_dict["time_based_multipliers"]
-
+            llm_providers = self.connection_manager.get_model_providers()
+            self.model_provider = llm_providers[0]
             has_twitter_tasks = any("tweet" in task["name"] for task in agent_dict.get("tasks", []))
             
             twitter_config = next((config for config in agent_dict["config"] if config["name"] == "twitter"), None)

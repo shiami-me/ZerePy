@@ -42,13 +42,6 @@
       "tweet_interval": 28800
     },
     {
-      "name": "groq",
-      "model": "llama-3.3-70b-versatile",
-      "tavily": true,
-      "max_tavily_results": 3,
-      "plugins": ["sonic", "image"]
-    },
-    {
       "name": "gemini",
       "model": "gemini-1.5-flash",
       "tavily": true,

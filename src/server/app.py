@@ -7,13 +7,15 @@ from src.models.image import GeneratedImage
 from src.database import get_db
 
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Type
 import logging
 import asyncio
 import signal
 import threading
 from pathlib import Path
 from src.cli import ZerePyCLI
+from src.agents.shiami import Shiami
+from src.connections.llm_base_connection import LLMBaseConnection
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("server/app")
@@ -128,6 +130,23 @@ class ZerePyServer:
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 
+        @self.app.post("/agent/create")
+        async def create_agent():
+            model_provider = self.state.cli.agent.model_provider
+            llm_class: Type[LLMBaseConnection] = self.state.cli.agent.connection_manager._class_name_to_type(model_provider)
+            
+            config = next((config for config in self.state.cli.agent.connection_manager.config if config["name"] == model_provider), None)
+            
+            llm = llm_class(config, self.state.cli.agent, False)._get_client()
+            shiami = Shiami(
+                agents=["python_repl", "text"],
+                llm=llm,
+                prompts={
+                    "python_repl": "You are a math agent",
+                    "text": "You are a researcher. DO NOT do any math."
+                }
+            )
+            shiami.execute_task("Write a research about addition and do 2 + 2")
         @self.app.post("/agent/action")
         async def agent_action(action_request: ActionRequest):
             """Execute a single agent action"""

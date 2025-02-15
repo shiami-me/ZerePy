@@ -13,8 +13,8 @@ class GroqConnectionError(Exception):
     pass
 
 class GroqConnection(LLMBaseConnection):
-    def __init__(self, config: Dict[str, Any], agent):
-        super().__init__(config, agent)
+    def __init__(self, config: Dict[str, Any], agent, tools: bool = True):
+        super().__init__(config, agent, tools)
         self.is_async = True  # Indicate this is an async implementation
 
     def get_llm_identifier(self) -> str:

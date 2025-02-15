@@ -30,6 +30,7 @@ class ConnectionManager:
     def __init__(self, agent, agent_config):
         self.connections: Dict[str, BaseConnection] = {}
         self.agent = agent
+        self.config = agent_config
         for config in agent_config:
             self._register_connection(config)
 
