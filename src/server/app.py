@@ -139,11 +139,13 @@ class ZerePyServer:
             
             llm = llm_class(config, self.state.cli.agent, False)._get_client()
             shiami = Shiami(
-                agents=["python_repl", "text"],
+                agents=["python_repl", "text", "rag_agent", "price_prediction"],
                 llm=llm,
                 prompts={
                     "python_repl": "You are a math agent",
-                    "text": "You are a researcher. DO NOT do any math."
+                    "text": "You are a researcher. DO NOT do any math.",
+                    "rag_agent": "You are a RAG agent that utilizes knowledge graph for retrieving result from the uplaoded document and answer user queries",
+                    "price_prediction": "you are a Price prediction agent that predicts price for given cryptocurrency or token."
                 }
             )
             shiami.execute_task("Write a research about addition and do 2 + 2")

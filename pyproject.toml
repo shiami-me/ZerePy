@@ -1,5 +1,6 @@
 [tool.poetry]
-name = "ZerePy"
+name = "zerepy"
+packages = [{ include = "src" }]
 version = "0.1.0"
 description = "A launch-pad for AI agents"
 authors = ["Ayoub Ed <ayoub@blorm.xyz>", "Efrain <ef@blorm.xyz>", "Max <max@blorm.xyz>"]
@@ -7,7 +8,7 @@ license = "MIT License"
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = ">=3.11,<3.13"
 python-dotenv = "^1.0.1"
 openai = "^1.63.0"
 prompt-toolkit = "^3.0.48"
@@ -38,13 +39,18 @@ langgraph = "^0.2.72"
 langchain-community = "0.3.14"
 browser-use = "^0.1.37"
 together = "^1.4.1"
-psycopg = "^3.2.4"
+psycopg = {extras = ["binary"], version = "^3.2.4"}
 psycopg-pool = "^3.2.4"
 langgraph-checkpoint-postgres = "^2.0.14"
 psycopg2 = "^2.9.10"
 langchain-postgres = "^0.0.13"
 langchain-experimental = "^0.3.4"
 langgraph-checkpoint = "^2.0.13"
+xgboost = "^2.1.4"
+lightgbm = "^4.6.0"
+scikit-learn = "^1.6.1"
+praw = "^7.8.1"
+transformers = "^4.48.3"
 
 [tool.poetry.extras]
 server = ["fastapi", "uvicorn", "requests"]

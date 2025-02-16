@@ -1,0 +1,36 @@
+technical:
+  coingecko:
+    api_key: ${COINGECKO_API_KEY}
+    auth_method: header
+  indicators:
+    sma: [20, 50]
+    ema: [12, 26]
+    macd:
+      fast: 12
+      slow: 26
+      signal: 9
+    rsi:
+      period: 14
+    bollinger:
+      period: 20
+      std_dev: 2
+
+model_params:
+  xgboost:
+    n_estimators: 100
+    learning_rate: 0.1
+    max_depth: 6
+  lightgbm:
+    n_estimators: 100
+    learning_rate: 0.1
+    num_leaves: 31
+
+weights:
+  short:
+    technical: 0.7
+    sentiment: 0.3
+  long:
+    technical: 0.6
+    sentiment: 0.4
+
+

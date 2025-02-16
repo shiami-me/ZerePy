@@ -7,6 +7,8 @@ from langgraph.graph import StateGraph, MessagesState, START, END
 from langgraph.types import Command
 from .python_repl import PythonReplAgent
 from .text_generation import TextAgent
+from .price_prediction_agent import CryptoPredictionAgent
+from .rag_agent import RAGAgent
 
 logger = logging.getLogger("agent/shiami")
 
@@ -76,8 +78,13 @@ class Shiami:
 
     @staticmethod
     def _name_to_class(class_name: str):
+
         if class_name == "python_repl":
             return PythonReplAgent
         elif class_name == "text":
             return TextAgent
+        elif class_name == "price_prediction":
+            return CryptoPredictionAgent
+        elif class_name == "rag_agent":
+            return RAGAgent
         return None
