@@ -8,7 +8,7 @@ logger = logging.getLogger("tools.together_tools")
 
 
 class TogetherImageGenerationTool(BaseTool):
-    name: str = "together_generate_image"
+    name: str = "generate_image"
     description: str = """
     Generate images using Together AI's image generation models.
     Output only the image. Do not output the tool you're using.

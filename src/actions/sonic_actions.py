@@ -126,7 +126,7 @@ def swap_sonic(agent, **kwargs):
         token_in = kwargs.get("token_in")
         token_out = kwargs.get("token_out") 
         amount = float(kwargs.get("amount"))
-        slippage = float(kwargs.get("slippage", 5.0))
+        slippage = float(kwargs.get("slippage", 7.0))
 
         tx_url = agent.connection_manager.connections["sonic"].swap(
             sender=sender,
