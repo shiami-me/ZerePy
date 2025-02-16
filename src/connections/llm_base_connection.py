@@ -42,7 +42,6 @@ class LLMBaseConnection(BaseConnection):
         super().__init__(config)
         self._client = None
         self.system_prompt = None
-        logger.info(tools)
         if tools:
             self.search_tool = None
             self.tools = []
@@ -271,7 +270,6 @@ class LLMBaseConnection(BaseConnection):
 
     def interrupt_chat(self, query: str) -> Any:
         """Interrupt the current chat flow"""
-        logger.info(query)
         response = interrupt({"query": query})
         return response["data"]
 
@@ -332,7 +330,6 @@ You are a helpful assistant with access to various tools. When using tools:
 
             config = {"configurable": {"thread_id": "4445998"}}
 
-            collected_response = []
             db_uri = os.getenv('POSTGRES_DB_URI')
             if not db_uri:
                 raise ValueError(
@@ -349,7 +346,6 @@ You are a helpful assistant with access to various tools. When using tools:
                 )
 
                 async for events in response_stream:
-                    logger.info(events)
 
                     for event in events:
                         if hasattr(event, "content"):
@@ -362,7 +358,6 @@ You are a helpful assistant with access to various tools. When using tools:
                                     function_name = function_call.get("name")
 
                                     if function_name:
-                                        logger.info(f"Function Call: {function_name}")
                                         yield json.dumps({"tool": function_name})
                 state = await graph.aget_state(config=config)
 
