@@ -83,17 +83,14 @@ def ensure_directories():
         os.makedirs(directory, exist_ok=True)
 
 def main():
-    # Ensure required directories exist
     ensure_directories()
     
-    # Initialize the RAG agent
     try:
         rag_agent = initialize_rag_agent()
     except Exception as e:
         print(f"Failed to initialize RAG agent: {e}")
         return
 
-    # Test document processing
     sample_file_path = "Chirag Khandelwal Resume.pdf"  # Update with your test document
     if os.path.exists(sample_file_path):
         success = test_document_processing(sample_file_path)
@@ -113,7 +110,6 @@ def main():
     for query in test_queries:
         test_rag_query(query, require_graph=True)
 
-    # Test full agent interaction
     agent_query = "Provide a summary and key insights from the document."
     test_agent_interaction(rag_agent, agent_query)
 

@@ -24,13 +24,12 @@ from langchain_core.documents import Document
 from langchain_core.prompts import PromptTemplate
 from langgraph.graph import state
 from langchain.agents import create_react_agent
-from langchain.schema import HumanMessage
 from langgraph.types import Command
 
 # Initialize spaCy with English medium model
 nlp = spacy.load("en_core_web_md")
 
-# Use MPNetModel for embeddings rather than a masked LM
+# Use MPNetModel for embeddings
 tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-mpnet-base-v2")
 model = MPNetModel.from_pretrained("sentence-transformers/all-mpnet-base-v2")
 
@@ -47,8 +46,8 @@ class MPNetEmbeddings:
         inputs = self.tokenizer(text, return_tensors="pt", truncation=True, padding=True)
         with torch.no_grad():
             outputs = self.model(**inputs)
-        embeddings = outputs.last_hidden_state  # (batch_size, seq_len, hidden_dim)
-        pooled_embedding = embeddings.mean(dim=1)  # (batch_size, hidden_dim)
+        embeddings = outputs.last_hidden_state  
+        pooled_embedding = embeddings.mean(dim=1)  
         return pooled_embedding.squeeze().tolist()
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
@@ -230,7 +229,9 @@ Question: {input}"""
         )
 
     def invoke(self, user_input: str):
+        
         # Provide empty placeholders for scratchpad and intermediate_steps.
+        
         result = self.rag_agent.invoke({
             "input": user_input,
             "agent_scratchpad": "",
@@ -240,13 +241,10 @@ Question: {input}"""
         if not messages:
             return "No response"
         final_msg = messages[-1]
-        # First, if the final message has an observation (common for AgentAction), use that.
         if hasattr(final_msg, "observation") and final_msg.observation:
             return final_msg.observation
-        # Otherwise, if it has a content attribute, use that.
         elif hasattr(final_msg, "content") and final_msg.content:
             return final_msg.content
-        # If neither is available, try to use a log attribute.
         elif hasattr(final_msg, "log") and final_msg.log:
             return final_msg.log
         else:
