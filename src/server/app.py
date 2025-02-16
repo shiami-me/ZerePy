@@ -14,11 +14,14 @@ import signal
 import threading
 from pathlib import Path
 from src.cli import ZerePyCLI
+from fastapi.responses import StreamingResponse
+
 from src.agents.shiami import Shiami
 from src.connections.llm_base_connection import LLMBaseConnection
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("server/app")
+
 
 class ActionRequest(BaseModel):
     """Request model for agent actions"""
@@ -26,8 +29,10 @@ class ActionRequest(BaseModel):
     action: str
     params: Optional[List[str]] = []
 
+
 class ServerState:
     """Simple state management for the server"""
+
     def __init__(self):
         self.cli = ZerePyCLI()
         self.agent_running = False
@@ -59,7 +64,7 @@ class ServerState:
         """Start the agent loop in background thread"""
         if not self.cli.agent:
             raise ValueError("No agent loaded")
-        
+
         if self.agent_running:
             raise ValueError("Agent already running")
 
@@ -75,6 +80,7 @@ class ServerState:
             if self.agent_task:
                 self.agent_task.join(timeout=5)
             self.agent_running = False
+
 
 class ZerePyServer:
     def __init__(self):
@@ -118,7 +124,7 @@ class ZerePyServer:
             """List all available connections"""
             if not self.state.cli.agent:
                 raise HTTPException(status_code=400, detail="No agent loaded")
-            
+
             try:
                 connections = {}
                 for name, conn in self.state.cli.agent.connection_manager.connections.items():
@@ -133,10 +139,12 @@ class ZerePyServer:
         @self.app.post("/agent/create")
         async def create_agent():
             model_provider = self.state.cli.agent.model_provider
-            llm_class: Type[LLMBaseConnection] = self.state.cli.agent.connection_manager._class_name_to_type(model_provider)
-            
-            config = next((config for config in self.state.cli.agent.connection_manager.config if config["name"] == model_provider), None)
-            
+            llm_class: Type[LLMBaseConnection] = self.state.cli.agent.connection_manager._class_name_to_type(
+                model_provider)
+
+            config = next(
+                (config for config in self.state.cli.agent.connection_manager.config if config["name"] == model_provider), None)
+
             llm = llm_class(config, self.state.cli.agent, False)._get_client()
             shiami = Shiami(
                 agents=["python_repl", "text"],
@@ -147,29 +155,79 @@ class ZerePyServer:
                 }
             )
             shiami.execute_task("Write a research about addition and do 2 + 2")
+
         @self.app.post("/agent/action")
         async def agent_action(action_request: ActionRequest):
             """Execute a single agent action"""
             if not self.state.cli.agent:
                 raise HTTPException(status_code=400, detail="No agent loaded")
-            
+
             try:
-                result = await asyncio.to_thread(
-                    self.state.cli.agent.perform_action,
-                    connection=action_request.connection,
-                    action=action_request.action,
-                    params=action_request.params
-                )
+                action = self.state.cli.agent.connection_manager.connections[action_request.connection].actions[action_request.action]
+                
+                kwargs = {}
+                param_index = 0
+
+                # Add provided parameters up to the number provided
+                for i, param in enumerate(action.parameters):
+                    if param_index < len(action_request.params):
+                        kwargs[param.name] = action_request.params[param_index]
+                        param_index += 1
+
+                # Validate all required parameters are present
+                missing_required = [
+                    param.name
+                    for param in action.parameters
+                    if param.required and param.name not in kwargs
+                ]
+
+                if missing_required:
+                    logging.error(
+                        f"\nError: Missing required parameters: {', '.join(missing_required)}"
+                    )
+                    return {"status": "error", "message": f"Missing required parameters: {', '.join(missing_required)}"}
+                action_method = self.state.cli.agent.connection_manager.connections[action_request.connection].perform_action
+                if asyncio.iscoroutinefunction(action_method):
+                    result = await action_method(
+                        action_name=action_request.action,
+                        kwargs=kwargs
+                    )
+                else:
+                    result = await asyncio.to_thread(
+                        action_method,
+                        action_name=action_request.action,
+                        kwargs=kwargs
+                    )
                 return {"status": "success", "result": result}
             except Exception as e:
                 raise HTTPException(status_code=400, detail=str(e))
 
+        @self.app.post("/agent/chat")
+        async def agent_chat(action_request: ActionRequest):
+            """Chat with the agent"""
+            if not self.state.cli.agent:
+                raise HTTPException(status_code=400, detail="No agent loaded")
+
+            try:
+                result = await self.state.cli.agent.perform_action(
+                    connection=action_request.connection,
+                    action="generate-text",
+                    params=action_request.params
+                )
+
+                if hasattr(result, "__aiter__"):
+                    return StreamingResponse(result, media_type="text/plain")
+
+                return {"status": "success", "result": result}
+
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=str(e))
         @self.app.post("/agent/start")
         async def start_agent():
             """Start the agent loop"""
             if not self.state.cli.agent:
                 raise HTTPException(status_code=400, detail="No agent loaded")
-            
+
             try:
                 await self.state.start_agent_loop()
                 return {"status": "success", "message": "Agent loop started"}
@@ -184,17 +242,19 @@ class ZerePyServer:
                 return {"status": "success", "message": "Agent loop stopped"}
             except Exception as e:
                 raise HTTPException(status_code=400, detail=str(e))
-            
+
         @self.app.get("/image/{filename}")
         async def get_image(filename: str, db: Session = Depends(get_db)):
             # Get image record from database
-            image = db.query(GeneratedImage).filter(GeneratedImage.filename == filename).first()
-            
+            image = db.query(GeneratedImage).filter(
+                GeneratedImage.filename == filename).first()
+
             if not image:
                 raise HTTPException(status_code=404, detail="Image not found")
-            
+
             # Return the image file
             return FileResponse(image.file_path)
+
 
 def create_app():
     server = ZerePyServer()

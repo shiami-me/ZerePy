@@ -2,15 +2,19 @@ import logging
 import os
 import json
 import uuid
-from typing import Dict, Any, Annotated, Optional
+import asyncio
+import functools
+
+from typing import Dict, Any, Annotated, Optional, AsyncGenerator
 from typing_extensions import TypedDict
 from dotenv import load_dotenv, set_key
 from langchain.schema import HumanMessage, AIMessage, SystemMessage
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import ToolMessage, AIMessageChunk
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import StateGraph, START, END
 from src.tools.sonic_tools import get_sonic_tools
 from src.tools.together_tools import get_together_tools
@@ -24,15 +28,17 @@ from langgraph.prebuilt import tools_condition, ToolNode
 
 logger = logging.getLogger("connections.llm_base_connection")
 
+
 class State(TypedDict):
     """Type for tracking conversation state"""
     messages: Annotated[list, add_messages]
     selected_tools: list[str]
 
+
 class LLMBaseConnection(BaseConnection):
     """Base class for LLM connections with common functionality"""
-    
-    def __init__(self, config: Dict[str, Any], agent = Optional, tools: bool = True):
+
+    def __init__(self, config: Dict[str, Any], agent=Optional, tools: bool = True):
         super().__init__(config)
         self._client = None
         self.system_prompt = None
@@ -49,7 +55,7 @@ class LLMBaseConnection(BaseConnection):
         """Initialize tools for the connection"""
         try:
             load_dotenv()
-            
+
             if self.config.get("tavily", False):
                 tavily_api_key = os.getenv('TAVILY_API_KEY')
                 if tavily_api_key:
@@ -59,15 +65,17 @@ class LLMBaseConnection(BaseConnection):
                         max_results=self.config.get("max_tavily_results", 2)
                     )
                     self.tools.append(self.search_tool)
-            
+
             if "sonic" in self.config.get("plugins", []):
-                sonic_tools = get_sonic_tools(agent=self._agent, llm=self.get_llm_identifier())
-                self.tools.extend(sonic_tools)   
-            
+                sonic_tools = get_sonic_tools(
+                    agent=self._agent, llm=self.get_llm_identifier())
+                self.tools.extend(sonic_tools)
+
             if "silo" in self.config.get("plugins", []):
-                silo_tools = get_silo_tools(agent=self._agent, llm=self.get_llm_identifier())
-                self.tools.extend(silo_tools)       
-        
+                silo_tools = get_silo_tools(
+                    agent=self._agent, llm=self.get_llm_identifier())
+                self.tools.extend(silo_tools)
+
             if "image" in self.config.get("plugins", []):
                 image_tools = get_together_tools(self._agent)
                 self.tools.extend(image_tools)
@@ -76,8 +84,9 @@ class LLMBaseConnection(BaseConnection):
             }
             db_uri = os.getenv('POSTGRES_DB_URI')
             if not db_uri:
-                raise ValueError("PostgreSQL connection URI not found in environment")
-            
+                raise ValueError(
+                    "PostgreSQL connection URI not found in environment")
+
             # Create tool documents with error handling
             tool_documents = []
             for id, tool in self.tool_registry.items():
@@ -89,7 +98,8 @@ class LLMBaseConnection(BaseConnection):
                     )
                     tool_documents.append(doc)
                 except Exception as e:
-                    logger.error(f"Error creating document for tool {tool.name}: {e}")
+                    logger.error(
+                        f"Error creating document for tool {tool.name}: {e}")
                     continue
 
             if tool_documents:
@@ -100,12 +110,13 @@ class LLMBaseConnection(BaseConnection):
                 #     use_jsonb=True,
                 # )
                 self.vector_store = InMemoryVectorStore(
-                    embedding=GoogleGenerativeAIEmbeddings(model="models/text-embedding-004"),
+                    embedding=GoogleGenerativeAIEmbeddings(
+                        model="models/text-embedding-004"),
                 )
                 self.vector_store.add_documents(tool_documents)
             else:
                 raise ValueError("No valid tool documents created")
-                
+
         except Exception as e:
             logger.error(f"Error in setup_tools: {e}")
             raise
@@ -124,7 +135,8 @@ class LLMBaseConnection(BaseConnection):
                 converted_messages = []
                 for msg in messages:
                     if isinstance(msg, SystemMessage):
-                        converted_messages.append(HumanMessage(content=f"System: {msg.content}"))
+                        converted_messages.append(HumanMessage(
+                            content=f"System: {msg.content}"))
                     elif isinstance(msg, (HumanMessage, AIMessage, ToolMessage)):
                         converted_messages.append(msg)
 
@@ -137,10 +149,10 @@ class LLMBaseConnection(BaseConnection):
                 if not selected_tools:
                     # Fallback to using all tools if none selected
                     selected_tools = self.tools
-
-                llm_with_tools = llm.bind_tools(tools=selected_tools, tool_choice="auto")
+                llm_with_tools = llm.bind_tools(
+                    tools=selected_tools, tool_choice="auto")
                 response = llm_with_tools.invoke(converted_messages)
-                
+
                 return {"messages": [response]}
             except Exception as e:
                 logger.error(f"Error in chatbot node: {str(e)}")
@@ -151,12 +163,14 @@ class LLMBaseConnection(BaseConnection):
             try:
                 last_user_message = state["messages"][-1]
                 query = last_user_message.content
-                tool_documents = self.vector_store.similarity_search(query, k=3)
-                selected_tool_ids = [doc.id for doc in tool_documents if doc.id in self.tool_registry]
+                tool_documents = self.vector_store.similarity_search(
+                    query, k=3)
+                selected_tool_ids = [
+                    doc.id for doc in tool_documents if doc.id in self.tool_registry]
                 if not selected_tool_ids:
                     # Fallback to using all tools
                     selected_tool_ids = list(self.tool_registry.keys())
-                    
+
                 return {"selected_tools": selected_tool_ids}
             except Exception as e:
                 logger.error(f"Error in route_tools: {str(e)}")
@@ -167,7 +181,8 @@ class LLMBaseConnection(BaseConnection):
         graph_builder.add_node("route_tools", route_tools)
         tool_node = ToolNode(tools=self.tools)
         graph_builder.add_node("tools", tool_node)
-        graph_builder.add_conditional_edges("chatbot", tools_condition, path_map=["tools", "__end__"])
+        graph_builder.add_conditional_edges(
+            "chatbot", tools_condition, path_map=["tools", "__end__"])
         graph_builder.add_edge("tools", "chatbot")
         graph_builder.add_edge("route_tools", "chatbot")
         graph_builder.add_edge(START, "route_tools")
@@ -177,17 +192,19 @@ class LLMBaseConnection(BaseConnection):
     def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Validate LLM configuration"""
         required_fields = ["model"]
-        missing_fields = [field for field in required_fields if field not in config]
-        
+        missing_fields = [
+            field for field in required_fields if field not in config]
+
         if missing_fields:
-            raise ValueError(f"Missing required configuration fields: {', '.join(missing_fields)}")
-            
+            raise ValueError(
+                f"Missing required configuration fields: {', '.join(missing_fields)}")
+
         if not isinstance(config["model"], str):
             raise ValueError("model must be a string")
-        
+
         if "tavily" in config and not isinstance(config["tavily"], bool):
             raise ValueError("tavily configuration must be a boolean")
-                
+
         return config
 
     def register_actions(self) -> None:
@@ -196,17 +213,22 @@ class LLMBaseConnection(BaseConnection):
             "generate-text": Action(
                 name="generate-text",
                 parameters=[
-                    ActionParameter("prompt", True, str, "The input prompt for text generation"),
-                    ActionParameter("system_prompt", True, str, "System prompt to guide the model"),
-                    ActionParameter("model", False, str, "Model to use for generation"),
-                    ActionParameter("temperature", False, float, "Temperature for generation")
+                    ActionParameter("prompt", True, str,
+                                    "The input prompt for text generation"),
+                    ActionParameter("system_prompt", True, str,
+                                    "System prompt to guide the model"),
+                    ActionParameter("model", False, str,
+                                    "Model to use for generation"),
+                    ActionParameter("temperature", False, float,
+                                    "Temperature for generation")
                 ],
                 description="Generate text using LLM models"
             ),
             "check-model": Action(
                 name="check-model",
                 parameters=[
-                    ActionParameter("model", True, str, "Model name to check availability")
+                    ActionParameter("model", True, str,
+                                    "Model name to check availability")
                 ],
                 description="Check if a specific model is available"
             ),
@@ -218,29 +240,31 @@ class LLMBaseConnection(BaseConnection):
             "continue-execution": Action(
                 name="continue-execution",
                 parameters=[
-                    ActionParameter("data", True, str, "Data to continue execution")
+                    ActionParameter("data", True, str,
+                                    "Data to continue execution")
                 ],
                 description="Continue execution with provided data"
             )
         }
 
-    def continue_execution(self, data: str) -> Any:
+    async def continue_execution(self, data: str) -> Any:
         """Continue execution based on provided data"""
         try:
-            config = {"configurable": {"thread_id": "222"}}
-            
+            config = {"configurable": {"thread_id": "4445998"}}
+
             db_uri = os.getenv('POSTGRES_DB_URI')
             if not db_uri:
-                raise ValueError("PostgreSQL connection URI not found in environment")
-            
-            with PostgresSaver.from_conn_string(db_uri) as checkpointer:
-                checkpointer.setup()
+                raise ValueError(
+                    "PostgreSQL connection URI not found in environment")
+
+            async with AsyncPostgresSaver.from_conn_string(db_uri) as checkpointer:
+                await checkpointer.setup()
                 graph = self.graph_builder.compile(checkpointer=checkpointer)
-                graph.invoke(
-                    Command(resume={"data": data}), 
+                await graph.ainvoke(
+                    Command(resume={"data": data}),
                     config=config
                 )
-                
+
         except Exception as e:
             logger.error(f"Error in continue_execution: {str(e)}")
             raise
@@ -271,14 +295,14 @@ class LLMBaseConnection(BaseConnection):
         """Override this method to list available models"""
         raise NotImplementedError
 
-    def generate_text(
+    async def generate_text(
         self,
         prompt: str,
         system_prompt: str,
         model: str = None,
         stream: bool = True,
         **kwargs
-    ) -> str:
+    ) -> AsyncGenerator:
         """Generate text using the LLM"""
         try:
             enhanced_system_prompt = f"""
@@ -297,7 +321,8 @@ You are a helpful assistant with access to various tools. When using tools:
                 self.system_prompt = enhanced_system_prompt
 
             messages = [
-                HumanMessage(content=f"Instructions for you: {enhanced_system_prompt}"),
+                HumanMessage(
+                    content=f"Instructions for you: {enhanced_system_prompt}"),
                 HumanMessage(content=f"Input: {prompt}")
             ]
 
@@ -305,40 +330,50 @@ You are a helpful assistant with access to various tools. When using tools:
                 "messages": messages,
             }
 
-            config = {"configurable": {"thread_id": "222"}}
-            
+            config = {"configurable": {"thread_id": "4445998"}}
+
             collected_response = []
             db_uri = os.getenv('POSTGRES_DB_URI')
             if not db_uri:
-                raise ValueError("PostgreSQL connection URI not found in environment")
-                
-            with PostgresSaver.from_conn_string(db_uri) as checkpointer:
-                checkpointer.setup()
+                raise ValueError(
+                    "PostgreSQL connection URI not found in environment")
+
+            async with AsyncPostgresSaver.from_conn_string(db_uri) as checkpointer:
+                await checkpointer.setup()
                 graph = self.graph_builder.compile(checkpointer=checkpointer)
-                response_stream = graph.stream(
+                state = await graph.aget_state(config=config)
+                response_stream = graph.astream(
                     initial_state,
                     config,
+                    stream_mode="messages"
                 )
-                
-                for chunk in response_stream:
-                    if isinstance(chunk, dict):
-                        if "chatbot" in chunk and "messages" in chunk["chatbot"]:
-                            messages = chunk["chatbot"]["messages"]
-                            if messages and isinstance(messages[-1], (AIMessage, ToolMessage)):
-                                collected_response.append(messages[-1].content)
-                        elif "__interrupt__" in chunk:
-                            interrupt_data = chunk["__interrupt__"][0]
-                            if hasattr(interrupt_data, 'value'):
-                                interrupt_value = interrupt_data.value
-                                collected_response = [interrupt_value.get('query', '')]
-                        elif "tools" in chunk and "messages" in chunk["tools"]:
-                            messages = chunk["tools"]["messages"]
-                            for message in messages:
-                                if isinstance(message, (ToolMessage, AIMessage)):
-                                    collected_response.append(message.content)
 
-            return "\n".join(filter(None, collected_response))
-            
+                async for events in response_stream:
+                    logger.info(events)
+
+                    for event in events:
+                        if hasattr(event, "content"):
+                            yield event.content
+                        if hasattr(event, "additional_kwargs"):
+                            if isinstance(event.additional_kwargs, dict):
+                                function_call = event.additional_kwargs.get("function_call")
+                                
+                                if isinstance(function_call, dict):
+                                    function_name = function_call.get("name")
+
+                                    if function_name:
+                                        logger.info(f"Function Call: {function_name}")
+                                        yield json.dumps({"tool": function_name})
+                state = await graph.aget_state(config=config)
+
+                if len(state.tasks) > 0:
+                    task = state.tasks[-1]
+                    if hasattr(task, "interrupts") and task.interrupts:
+                        interrupt_value = task.interrupts[0].value
+                        if isinstance(interrupt_value, dict) and "query" in interrupt_value:
+                            yield interrupt_value["query"]
+
+
         except Exception as e:
             logger.error(f"Generation error: {str(e)}")
             raise
@@ -347,13 +382,12 @@ You are a helpful assistant with access to various tools. When using tools:
     def is_llm_provider(self) -> bool:
         return True
 
-    def perform_action(self, action_name: str, kwargs) -> Any:
+    async def perform_action(self, action_name: str, kwargs) -> Any:
         """Execute an LLM action with validation"""
         if action_name not in self.actions:
             raise KeyError(f"Unknown action: {action_name}")
 
         load_dotenv()
-        
         if not self.is_configured(verbose=True):
             raise ValueError(f"{self.__class__.__name__} is not properly configured")
 
@@ -364,4 +398,8 @@ You are a helpful assistant with access to various tools. When using tools:
 
         method_name = action_name.replace('-', '_')
         method = getattr(self, method_name)
-        return method(**kwargs)
+        if asyncio.iscoroutinefunction(method):
+            return await method(**kwargs)
+        
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, functools.partial(method, **kwargs))
