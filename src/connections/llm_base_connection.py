@@ -9,7 +9,7 @@ from typing import Dict, Any, Annotated, Optional, AsyncGenerator
 from typing_extensions import TypedDict
 from dotenv import load_dotenv, set_key
 from langchain.schema import HumanMessage, AIMessage, SystemMessage
-from langchain_core.messages import ToolMessage, AIMessageChunk
+from langchain_core.messages import ToolMessage, AIMessageChunk, RemoveMessage
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph.message import add_messages
@@ -130,7 +130,7 @@ class LLMBaseConnection(BaseConnection):
             """Generate response using LLM"""
             try:
                 llm = self._get_client()
-                messages = state["messages"]
+                messages = state["messages"][-7:]
                 converted_messages = []
                 for msg in messages:
                     if isinstance(msg, SystemMessage):
@@ -216,6 +216,8 @@ class LLMBaseConnection(BaseConnection):
                                     "The input prompt for text generation"),
                     ActionParameter("system_prompt", True, str,
                                     "System prompt to guide the model"),
+                    ActionParameter("thread", False, str,
+                                    "Thread ID for conversation"),
                     ActionParameter("model", False, str,
                                     "Model to use for generation"),
                     ActionParameter("temperature", False, float,
@@ -240,16 +242,34 @@ class LLMBaseConnection(BaseConnection):
                 name="continue-execution",
                 parameters=[
                     ActionParameter("data", True, str,
-                                    "Data to continue execution")
+                                    "Data to continue execution"),
+                    ActionParameter("thread", True, str,
+                                    "Thread ID for conversation"),
                 ],
                 description="Continue execution with provided data"
-            )
+            ),
+            "get-message-history": Action(
+                name="get-message-history",
+                parameters=[
+                    ActionParameter("thread", True, str,
+                                    "Thread ID to retrieve message history")
+                ],
+                description="Retrieve message history for a specific thread"
+            ),
+            "delete-chat": Action(
+                name="delete-chat",
+                parameters=[
+                    ActionParameter("thread", True, str,
+                                    "Thread ID to delete chat history")
+                ],
+                description="Delete chat history for a specific thread"
+            ),
         }
 
-    async def continue_execution(self, data: str) -> Any:
+    async def continue_execution(self, data: str, thread: str) -> Any:
         """Continue execution based on provided data"""
         try:
-            config = {"configurable": {"thread_id": "4445998"}}
+            config = {"configurable": {"thread_id": thread}}
 
             db_uri = os.getenv('POSTGRES_DB_URI')
             if not db_uri:
@@ -297,6 +317,7 @@ class LLMBaseConnection(BaseConnection):
         self,
         prompt: str,
         system_prompt: str,
+        thread: str = None,
         model: str = None,
         stream: bool = True,
         **kwargs
@@ -306,6 +327,7 @@ class LLMBaseConnection(BaseConnection):
             enhanced_system_prompt = f"""
 {system_prompt}
 
+Behave like a normal assistant if there's no wallet.
 You are a helpful assistant with access to various tools. When using tools:
 1. Don't explain what you're doing, just do it
 2. Don't ask for confirmation, just execute
@@ -328,7 +350,7 @@ You are a helpful assistant with access to various tools. When using tools:
                 "messages": messages,
             }
 
-            config = {"configurable": {"thread_id": "4445998"}}
+            config = {"configurable": {"thread_id": thread}}
 
             db_uri = os.getenv('POSTGRES_DB_URI')
             if not db_uri:
@@ -338,7 +360,6 @@ You are a helpful assistant with access to various tools. When using tools:
             async with AsyncPostgresSaver.from_conn_string(db_uri) as checkpointer:
                 await checkpointer.setup()
                 graph = self.graph_builder.compile(checkpointer=checkpointer)
-                state = await graph.aget_state(config=config)
                 response_stream = graph.astream(
                     initial_state,
                     config,
@@ -372,6 +393,78 @@ You are a helpful assistant with access to various tools. When using tools:
         except Exception as e:
             logger.error(f"Generation error: {str(e)}")
             raise
+        
+    async def get_message_history(self, thread: str) -> list:
+        """
+        Retrieve and format the message history for the frontend.
+
+        Args:
+            thread (str): Thread ID.
+
+        Returns:
+            list: A list of messages formatted as {id, text, sender}.
+        """
+        try:
+            config = {"configurable": {"thread_id": thread}}
+            formatted_messages = []
+            db_uri = os.getenv('POSTGRES_DB_URI')
+            
+            async with AsyncPostgresSaver.from_conn_string(db_uri) as checkpointer:
+                await checkpointer.setup()
+                state = await self.graph_builder.compile(checkpointer=checkpointer).aget_state(config=config)
+                messages = state.values.get("messages", [])
+                i = 0
+                for message in messages:
+                    if isinstance(message, HumanMessage) and "Input: " in message.content:
+                        content = message.content
+                        sender = "user"
+
+                        formatted_messages.append({
+                            "id": i,
+                            "text": content.replace("Input: ", ""),
+                            "sender": sender
+                        })
+                        i += 1
+                    elif isinstance(message, AIMessage):
+                        content = message.content
+                        sender = "bot"
+
+                        formatted_messages.append({
+                            "id": i,
+                            "text": content,
+                            "sender": sender
+                        })
+                        i += 1
+            return formatted_messages
+
+        except Exception as e:
+            logger.error(f"Error fetching message history: {str(e)}")
+            return []
+
+    async def delete_chat(self, thread: str) -> None:
+        """
+        Delete the chat history for a specific thread.
+
+        Args:
+            thread (str): Thread ID.
+        """
+        try:
+            db_uri = os.getenv('POSTGRES_DB_URI')
+            async with AsyncPostgresSaver.from_conn_string(db_uri) as checkpointer:
+                await checkpointer.setup()
+                graph = self.graph_builder.compile(checkpointer=checkpointer)
+                state = await graph.aget_state(config={"configurable": {"thread_id": thread}})
+                messages = state.values.get("messages", [])
+                for message in messages:
+                    await graph.aupdate_state(
+                        config={"configurable": {"thread_id": thread}},
+                        values={"messages": [RemoveMessage(id=message.id)], "selected_tools": []},
+                        as_node="chatbot"
+                    )
+
+
+        except Exception as e:
+            logger.error(f"Error deleting chat history: {str(e)}")
 
     @property
     def is_llm_provider(self) -> bool:
