@@ -8,6 +8,7 @@ from langgraph.types import Command
 from .python_repl import PythonReplAgent
 from .text_generation import TextAgent
 from .scheduler_agent import SchedulerAgent
+from .price_agent import PriceAgent
 
 logger = logging.getLogger("agent/shiami")
 
@@ -16,10 +17,10 @@ class State(MessagesState):
 
 class Router(BaseModel):
     """Worker to route to next. If no workers needed, route to FINISH."""
-    next: Literal["python_repl", "text", "scheduler", "email", "FINISH"]
+    next: Literal["python_repl", "text", "scheduler", "email", "price", "FINISH"]
 
 class Shiami:
-    def __init__(self, agents: list[str], llm, prompts: dict[str, str]):
+    def __init__(self, agents: list[str], llm, prompt: str, prompts: dict[str, str]):
         self._agents = agents
         self._system_prompt = (
             "You are a Shiami tasked with managing a conversation between the"
@@ -27,6 +28,7 @@ class Shiami:
             " respond with the worker to act next. Each worker will perform a"
             " task and respond with their results and status. When error occurs,"
             " respond with FINISH."
+            f" Here's some info for your current task: {prompt}"
             f" Prompts for workers: {prompts}"
         )
 
@@ -86,7 +88,9 @@ class Shiami:
             return TextAgent
         elif class_name == "scheduler":
             return SchedulerAgent
-        elif class_name == "email":  # Add email agent mapping
+        elif class_name == "email":
             from .email_agent import EmailAgent
             return EmailAgent
+        elif class_name == "price":
+            return PriceAgent
         return None

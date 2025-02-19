@@ -17,17 +17,18 @@ class EmailInput(BaseModel):
     body: str = Field(description="Email body content")
 
 class EmailTool(BaseTool):
-    """Tool for sending emails using SMTP"""
-    name: str = "email_sender"
-    description: str = """Send emails using custom SMTP server.
-    Requires:
-    - Recipient email address
-    - Subject
-    - Body content
+    description: str = """Sends emails using the provided information.
+    Input should be in the format: email(recipient, subject, body)
     
-    Example:
-    Send an email to john@example.com with subject "Meeting Notes" and content "Here are the meeting notes..."
+    - recipient: The email address of the recipient
+    - subject: The subject line of the email
+    - body: The main content of the email
+    
+    Example: email("user@example.com", "Daily Bitcoin Report", "Here's your daily Bitcoin price report...")
+    
+    This tool will only send emails and confirm their status. It will not generate content or modify the provided email details.
     """
+    name: str = "email_sender"
     args_schema: Type[BaseModel] = EmailInput
     
     def __init__(self):

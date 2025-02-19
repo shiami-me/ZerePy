@@ -13,25 +13,28 @@ logger = logging.getLogger(__name__)
 TASK_REGISTRY = {}
 
 class SchedulerTool(BaseTool):
-    """Tool for scheduling and managing tasks using cron expressions"""
     name: str = "task_scheduler"
-    description: str = """Schedule and manage tasks using cron expressions. Examples:
+    description: str = """Schedule tasks using cron expressions. This tool should only be used when explicitly asked to schedule recurring tasks.
+    
+    Inputs:
+    - task: The task description to be scheduled (should not contain scheduling information)
+    - cron: Cron expression for scheduling the task
+    
+    Cron expression examples:
     - Daily at midnight: "0 0 * * *"
     - Every 30 minutes: "*/30 * * * *"
     - Every Monday at 9am: "0 9 * * 1"
     - First day of month at 3am: "0 3 1 * *"
     
-    Inputs:
-    - task: The task to be scheduled (shouldn't contain any information about schedule or time)
-    - cron: Cron expression for scheduling the task
+    Example Inputs:
+    1. Schedule a daily Bitcoin price report:
+       task: "generate a Bitcoin price report and email it to user@example.com"
+       cron: "0 9 * * *"
+    2. Schedule a weekly Ethereum analysis:
+       task: "create an Ethereum market analysis and save it"
+       cron: "0 10 * * 1"
     
-    Example Input - 
-    1. Generate a research paper and save it in every 5 minutes. 
-        task - "generate a research paper and save it"
-        cron - */5 * * * *
-    2. Write a research about blockchain and send it to example@gmail.com every day at 9:00 AM.
-        task - "write a research about blockchain and send it to example@gmail.com"
-        cron - 0 9 * * *
+    This tool will schedule the task and return the next execution time. It does not execute the task immediately.
     """
     
     def __init__(self, run_manager):
