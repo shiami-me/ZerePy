@@ -120,7 +120,7 @@ class GeminiConnection(LLMBaseConnection):
         try:
             supported_models = [
                 "gemini-1.5-pro",
-                "gemini-1.5-flash",
+                "gemini-2.0-flash",
             ]
             return model in supported_models
                 
@@ -132,7 +132,7 @@ class GeminiConnection(LLMBaseConnection):
         try:
             supported_models = [
                 "gemini-1.5-pro",
-                "gemini-1.5-flash",
+                "gemini-2.0-flash",
             ]
 
             logger.info("\nAVAILABLE MODELS:")
