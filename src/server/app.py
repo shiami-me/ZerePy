@@ -147,14 +147,14 @@ class ZerePyServer:
 
             llm = llm_class(config, self.state.cli.agent, False)._get_client()
             shiami = Shiami(
-                agents=["python_repl", "text"],
+                agents=["scheduler", "text"],
                 llm=llm,
                 prompts={
-                    "python_repl": "You are a math agent",
-                    "text": "You are a researcher. DO NOT do any math."
+                    "scheduler": "You are a scheduler. Schedule only when you are asked to.",
+                    "text": "You are a researcher."
                 }
             )
-            shiami.execute_task("Write a research about addition and do 2 + 2")
+            shiami.execute_task("Write a research about addition and do 2 + 2 every 1 minute")
 
         @self.app.post("/agent/action")
         async def agent_action(action_request: ActionRequest):

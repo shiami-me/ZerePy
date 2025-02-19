@@ -7,7 +7,7 @@ license = "MIT License"
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = ">=3.11,<3.13"
 python-dotenv = "^1.0.1"
 openai = "^1.63.0"
 prompt-toolkit = "^3.0.48"
@@ -45,10 +45,20 @@ psycopg2 = "^2.9.10"
 langchain-postgres = "^0.0.13"
 langchain-experimental = "^0.3.4"
 langgraph-checkpoint = "^2.0.13"
+networkx = { version = "^3.4.2", optional = true }
+spacy = { version = "^3.8.4", optional = true }
+torch = { version = "^2.6.0", optional = true }
+transformers = { version = "^4.48.3", optional = true }
+en_core_web_md = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0.tar.gz", optional = true }
+pypdf = { version = "^5.3.0", optional = true }
+faiss-cpu = { version = "^1.10.0", optional = true }
+croniter = { version = "^6.0.0", optional = true }
+apscheduler = { version = "^3.11.0", optional = true }
 
 [tool.poetry.extras]
 server = ["fastapi", "uvicorn", "requests"]
-
+rag = ["networkx", "spacy", "torch", "transformers", "en_core_web_md", "pypdf", "faiss-cpu"]
+agents = ["croniter", "apscheduler"]
 
 [build-system]
 requires = ["poetry-core"]
