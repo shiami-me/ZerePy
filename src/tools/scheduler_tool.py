@@ -22,12 +22,16 @@ class SchedulerTool(BaseTool):
     - First day of month at 3am: "0 3 1 * *"
     
     Inputs:
-    - task: The task to be scheduled
+    - task: The task to be scheduled (shouldn't contain any information about schedule or time)
     - cron: Cron expression for scheduling the task
     
-    Example Input - Generate a research paper and save it in every 5 minutes. 
+    Example Input - 
+    1. Generate a research paper and save it in every 5 minutes. 
         task - "generate a research paper and save it"
         cron - */5 * * * *
+    2. Write a research about blockchain and send it to example@gmail.com every day at 9:00 AM.
+        task - "write a research about blockchain and send it to example@gmail.com"
+        cron - 0 9 * * *
     """
     
     def __init__(self, run_manager):

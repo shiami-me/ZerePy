@@ -16,7 +16,7 @@ class State(MessagesState):
 
 class Router(BaseModel):
     """Worker to route to next. If no workers needed, route to FINISH."""
-    next: Literal["python_repl", "text", "scheduler", "FINISH"]
+    next: Literal["python_repl", "text", "scheduler", "email", "FINISH"]
 
 class Shiami:
     def __init__(self, agents: list[str], llm, prompts: dict[str, str]):
@@ -86,4 +86,7 @@ class Shiami:
             return TextAgent
         elif class_name == "scheduler":
             return SchedulerAgent
+        elif class_name == "email":  # Add email agent mapping
+            from .email_agent import EmailAgent
+            return EmailAgent
         return None
