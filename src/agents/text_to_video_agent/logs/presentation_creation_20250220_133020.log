@@ -1,0 +1,14 @@
+2025-02-20 13:30:20,721 - INFO - Creating presentation video about The Advancement in LLM's with 5 slides
+2025-02-20 13:30:20,722 - INFO - Generating content
+2025-02-20 13:30:20,742 - INFO - Generating content for 5 slides about The Advancement in LLM's
+2025-02-20 13:30:20,742 - INFO - Generated content for 5 slides
+2025-02-20 13:30:20,743 - INFO - Creating PowerPoint
+2025-02-20 13:30:20,745 - INFO - Creating PowerPoint with 5 slides
+2025-02-20 13:30:20,845 - INFO - PowerPoint saved to E:\Projects\Shiami_updated\ZerePy\src\agents\text_to_video_agent\temp_presentation.pptx
+2025-02-20 13:30:20,846 - INFO - Converting to images
+2025-02-20 13:30:20,848 - INFO - Converting PowerPoint to images: E:\Projects\Shiami_updated\ZerePy\src\agents\text_to_video_agent\temp_presentation.pptx -> E:\Projects\Shiami_updated\ZerePy\src\agents\text_to_video_agent\temp_slides
+2025-02-20 13:30:25,823 - INFO - Generating video
+2025-02-20 13:30:25,831 - INFO - Generating video from images in E:\Projects\Shiami_updated\ZerePy\src\agents\text_to_video_agent\temp_slides
+2025-02-20 13:30:35,220 - INFO - Video generated: E:\Projects\Shiami_updated\ZerePy\src\agents\text_to_video_agent\presentation_video.mp4
+2025-02-20 13:30:35,223 - INFO - Video created successfully. Size: 10.55 MB
+2025-02-20 13:30:35,223 - INFO - Cleaning up temporary files

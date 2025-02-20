@@ -1,0 +1,13 @@
+2025-02-20 11:34:25,222 - INFO - Creating presentation video about The Future of Artificial Intelligence with 5 slides
+2025-02-20 11:34:25,224 - INFO - Generating content
+2025-02-20 11:34:25,248 - INFO - Generating content for 5 slides about The Future of Artificial Intelligence
+2025-02-20 11:34:25,248 - INFO - Generated content for 5 slides
+2025-02-20 11:34:25,249 - INFO - Creating PowerPoint
+2025-02-20 11:34:25,251 - INFO - Creating PowerPoint with 5 slides
+2025-02-20 11:34:25,371 - INFO - PowerPoint saved to E:\Projects\Shiami_updated\ZerePy\src\agents\text_to_video_agent\temp_presentation.pptx
+2025-02-20 11:34:25,372 - INFO - Converting to images
+2025-02-20 11:34:25,374 - INFO - Converting PowerPoint to images: E:\Projects\Shiami_updated\ZerePy\src\agents\text_to_video_agent\temp_presentation.pptx -> E:\Projects\Shiami_updated\ZerePy\src\agents\text_to_video_agent\temp_slides
+2025-02-20 11:34:29,285 - ERROR - Error converting to images: <unknown>.Export
+2025-02-20 11:34:29,286 - ERROR - Error creating presentation: <unknown>.Export
+2025-02-20 11:34:29,287 - INFO - Cleaning up temporary files
+2025-02-20 11:34:29,288 - WARNING - Error during cleanup: [WinError 32] The process cannot access the file because it is being used by another process: 'E:\\Projects\\Shiami_updated\\ZerePy\\src\\agents\\text_to_video_agent\\temp_presentation.pptx'
