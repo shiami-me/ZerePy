@@ -1,8 +1,9 @@
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from langgraph.graph import MessagesState
-from langgraph.prebuilt import create_react_agent
 from src.tools.email_tool import EmailTool
+from ..utils.vector_store_utils import VectorStoreUtils
+from ..utils.create_agent import Agent
 
 class State(MessagesState):
     next: str
@@ -10,14 +11,16 @@ class State(MessagesState):
 class EmailAgent:
     """Agent for handling email operations using yagmail."""
     
-    def __init__(self, llm, name: str, prompt: str):
+    def __init__(self, llm, name: str, prompt: str, next: str):
         self._name = name
         self.email_tool = EmailTool()
-        self.email_agent = create_react_agent(
-            llm,
+        self.email_agent = Agent(
             tools=[self.email_tool],
+            vector_store=VectorStoreUtils(tools=[self.email_tool]),
+            llm=llm,
             prompt=prompt
-        )
+        )._create_conversation_graph()
+        self.next = next
 
     def node(self, state: State):
         """Process the current state and return the next command."""
@@ -32,7 +35,7 @@ class EmailAgent:
                         )
                     ]
                 },
-                goto="shiami",
+                goto="shiami"
             )
         except Exception as e:
             error_msg = f"Email agent error: {str(e)}"

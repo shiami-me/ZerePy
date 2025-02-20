@@ -5,10 +5,11 @@ from typing import Literal
 
 from langgraph.graph import StateGraph, MessagesState, START, END
 from langgraph.types import Command
-from .python_repl import PythonReplAgent
 from .text_generation import TextAgent
 from .scheduler_agent import SchedulerAgent
 from .price_agent import PriceAgent
+from .email_agent import EmailAgent
+from ..utils.vector_store_utils import VectorStoreUtils
 
 logger = logging.getLogger("agent/shiami")
 
@@ -17,10 +18,10 @@ class State(MessagesState):
 
 class Router(BaseModel):
     """Worker to route to next. If no workers needed, route to FINISH."""
-    next: Literal["python_repl", "text", "scheduler", "email", "price", "FINISH"]
+    next: Literal["text", "scheduler", "email", "price", "FINISH"]
 
 class Shiami:
-    def __init__(self, agents: list[str], llm, prompt: str, prompts: dict[str, str]):
+    def __init__(self, agents: list[str], llm, prompt: str, prompts: dict[str, str], data: dict[str, str]):
         self._agents = agents
         self._system_prompt = (
             "You are a Shiami tasked with managing a conversation between the"
@@ -31,7 +32,7 @@ class Shiami:
             f" Here's some info for your current task: {prompt}"
             f" Prompts for workers: {prompts}"
         )
-
+        self._data = data
         self._llm = llm
         self._prompts = prompts
         self.graph = self.create_graph()
@@ -45,13 +46,28 @@ class Shiami:
                 continue
             if agent == "scheduler":
                 builder.add_node("scheduler", SchedulerAgent(
-                    llm=self._llm, name=agent, prompt=self._prompts[agent], run_manager=self.execute_task).node)
+                    llm=self._llm, 
+                    name=agent, 
+                    prompt=self._prompts[agent], 
+                    next=self._data["scheduler"]["next"], 
+                    run_manager=self.execute_task).node)
                 continue
-            agent_class = self._name_to_class(agent)
-            builder.add_node(agent, agent_class(
-                llm=self._llm, name=agent, prompt=self._prompts[agent]).node)
+            
+            agent_class = self._name_to_class(self._data[agent]["name"])
+            logger.info(self._data[agent]["next"])
+            logger.info(agent)
+            builder.add_node(
+                agent, 
+                agent_class(
+                    llm=self._llm, 
+                    name=agent, 
+                    prompt=self._prompts[agent],
+                    next=self._data[agent]["next"]
+                ).node
+            )
 
         return builder.compile()
+
 
     def node(self, state: State):
         messages = [
@@ -82,14 +98,11 @@ class Shiami:
 
     @staticmethod
     def _name_to_class(class_name: str):
-        if class_name == "python_repl":
-            return PythonReplAgent
-        elif class_name == "text":
+        if class_name == "text":
             return TextAgent
         elif class_name == "scheduler":
             return SchedulerAgent
         elif class_name == "email":
-            from .email_agent import EmailAgent
             return EmailAgent
         elif class_name == "price":
             return PriceAgent

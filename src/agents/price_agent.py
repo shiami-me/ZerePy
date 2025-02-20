@@ -3,6 +3,8 @@ from langgraph.types import Command
 from langgraph.graph import MessagesState
 from langgraph.prebuilt import create_react_agent
 from src.tools.price_tools import CryptoPricePredictionTool
+from ..utils.vector_store_utils import VectorStoreUtils
+from ..utils.create_agent import Agent
 
 class State(MessagesState):
     next: str
@@ -10,14 +12,16 @@ class State(MessagesState):
 class PriceAgent:
     """Agent for handling cryptocurrency price predictions."""
     
-    def __init__(self, llm, name: str, prompt: str):
+    def __init__(self, llm, name: str, prompt: str, next: str):
         self._name = name
         self.price_tool = CryptoPricePredictionTool()
-        self.price_agent = create_react_agent(
-            llm,
+        self.price_agent = Agent(
             tools=[self.price_tool],
+            vector_store=VectorStoreUtils(tools=[self.price_tool]),
+            llm=llm,
             prompt=prompt
-        )
+        )._create_conversation_graph()
+        self.next = next
 
     def node(self, state: State):
         """Process the current state and return the next command."""
@@ -32,7 +36,8 @@ class PriceAgent:
                         )
                     ]
                 },
-                goto="shiami",
+#         # goto=self.next
+            goto="shiami"
             )
         except Exception as e:
             error_msg = f"Price prediction agent error: {str(e)}"

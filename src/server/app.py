@@ -147,53 +147,29 @@ class ZerePyServer:
 
             llm = llm_class(config, self.state.cli.agent, False)._get_client()
             shiami = Shiami(
-                agents=["scheduler", "price", "text", "email"],
+                agents=["scheduler", "price",
+                        "email_formatter", "report", "email"],
                 llm=llm,
-                prompt="""You are an AI assistant managing email scheduling and cryptocurrency price reports for users. Your role is to:
-1. Understand user requests related to scheduling price reports or getting price predictions.
-2. Use the price agent to generate cryptocurrency price predictions when needed.
-3. Use the text agent to format the price information into a well-structured email.
-4. Use the email agent to send the formatted information.
-5. Use the scheduler agent only when explicitly asked to schedule recurring tasks.
-6. Always confirm actions with the user before executing them.
-7. If a request is unclear or outside your capabilities, ask for clarification.
-""",
+                prompt="""You are an AI assistant manageing conversations between the agents
+                """,
                 prompts={
-                    "scheduler": """You are a scheduling assistant. Your role is to:
-1. Only schedule tasks when explicitly requested by the user.
-2. Use cron expressions for scheduling (e.g., "0 9 * * *" for daily at 9 AM).
-3. Confirm the schedule details with the user before setting it up.
-4. Provide clear feedback on the scheduled task, including the next run time.
-5. If a scheduling request is unclear, ask for more details.
-Example: "Schedule a daily Bitcoin price report at 9 AM."
-""",
-                    "price": """You are a cryptocurrency price prediction agent. Your role is to:
-1. Provide price predictions only for the requested cryptocurrency.
-2. Use historical data and your tools to make accurate predictions.
-3. Always include confidence levels with your predictions.
-4. Explain any significant factors influencing your prediction.
-5. If asked about an unsupported cryptocurrency, inform the user and suggest alternatives.
-Example: "Predict the price of Ethereum."
-""",
-                    "text": """You are an email content formatting agent. Your role is to:
-1. Take the provided information (e.g., price predictions) and format it into a clear, professional email.
-2. Structure the email with a proper greeting, body, and closing.
-3. Use bullet points or tables for clarity when presenting data.
-4. Ensure the content is concise and easy to read.
-5. Do not add any information that wasn't provided to you.
-Output format: email(recipient, subject, body)
-""",
-                    "email": """You are an email sending agent. Your role is to:
-1. Send emails using the provided email(recipient, subject, body) format.
-2. Confirm that the email was sent successfully.
-3. If there are any issues with sending the email, provide a clear error message.
-4. Do not modify the email content provided to you.
-5. Respect privacy and do not disclose email addresses or content unnecessarily.
-"""
+                    "scheduler": """You are a scheduling assistant.""",
+                    "price": """You are a cryptocurrency price prediction agent.""",
+                    "report": """You are a price report report generating agent based on the given data.""",
+                    "email_formatter": """You are an email content formatting agent.""",
+                    "email": """You are an email sending agent. """
+                },
+                data={
+                    "scheduler": {"name": "scheduler", "next": "price"},
+                    "price": {"name": "price", "next": "report"},
+                    "report": {"name": "text", "next": "email_formatter"},
+                    "email_formatter": {"name": "text", "next": "email"},
+                    "email": {"name": "email", "next": "FINISH"},
                 }
             )
-            
-            shiami.execute_task("Send a price report of S to parth.eng1210@gmail.com")
+
+            shiami.execute_task(
+                "send random email to parth.eng1210@gmail.com every 5 minutes")
 
         @self.app.post("/agent/action")
         async def agent_action(action_request: ActionRequest):
@@ -202,8 +178,9 @@ Output format: email(recipient, subject, body)
                 raise HTTPException(status_code=400, detail="No agent loaded")
 
             try:
-                action = self.state.cli.agent.connection_manager.connections[action_request.connection].actions[action_request.action]
-                
+                action = self.state.cli.agent.connection_manager.connections[
+                    action_request.connection].actions[action_request.action]
+
                 kwargs = {}
                 param_index = 0
 
@@ -225,7 +202,8 @@ Output format: email(recipient, subject, body)
                         f"\nError: Missing required parameters: {', '.join(missing_required)}"
                     )
                     return {"status": "error", "message": f"Missing required parameters: {', '.join(missing_required)}"}
-                action_method = self.state.cli.agent.connection_manager.connections[action_request.connection].perform_action
+                action_method = self.state.cli.agent.connection_manager.connections[
+                    action_request.connection].perform_action
                 if asyncio.iscoroutinefunction(action_method):
                     result = await action_method(
                         action_name=action_request.action,
@@ -261,6 +239,7 @@ Output format: email(recipient, subject, body)
 
             except Exception as e:
                 raise HTTPException(status_code=400, detail=str(e))
+
         @self.app.post("/agent/start")
         async def start_agent():
             """Start the agent loop"""

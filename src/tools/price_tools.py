@@ -133,7 +133,7 @@ class LSTMModel(nn.Module):
 
 class CryptoPricePredictionTool(BaseTool):
     name: str = "crypto_price_predictor"
-    description: str = """Predicts cryptocurrency prices using historical data and machine learning models.
+    description: str = """Predicts cryptocurrency prices.
     Input should include:
     - coin_code: The cryptocurrency code (e.g., 'BTC', 'ETH', "S" etc)
     
