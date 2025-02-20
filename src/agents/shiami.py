@@ -9,6 +9,7 @@ from .text_generation import TextAgent
 from .scheduler_agent import SchedulerAgent
 from .price_agent import PriceAgent
 from .email_agent import EmailAgent
+from .image_agent import ImageAgent
 from ..utils.vector_store_utils import VectorStoreUtils
 
 logger = logging.getLogger("agent/shiami")
@@ -18,10 +19,10 @@ class State(MessagesState):
 
 class Router(BaseModel):
     """Worker to route to next. If no workers needed, route to FINISH."""
-    next: Literal["text", "scheduler", "email", "price", "FINISH"]
+    next: Literal["text", "scheduler", "email", "price", "image", "FINISH"]
 
 class Shiami:
-    def __init__(self, agents: list[str], llm, prompt: str, prompts: dict[str, str], data: dict[str, str]):
+    def __init__(self, agent ,agents: list[str], llm, prompt: str, prompts: dict[str, str], data: dict[str, str]):
         self._agents = agents
         self._system_prompt = (
             "You are a Shiami tasked with managing a conversation between the"
@@ -29,12 +30,14 @@ class Shiami:
             " respond with the worker to act next. Each worker will perform a"
             " task and respond with their results and status. When error occurs,"
             " respond with FINISH."
+            " if some agent doesn't do it's task well, ask to redo. and if some agent replies with anything that is the job of other agent then retry by refining the prompt specific to that agent."
             f" Here's some info for your current task: {prompt}"
             f" Prompts for workers: {prompts}"
         )
         self._data = data
         self._llm = llm
         self._prompts = prompts
+        self._agent = agent
         self.graph = self.create_graph()
 
     def create_graph(self):
@@ -52,7 +55,15 @@ class Shiami:
                     next=self._data["scheduler"]["next"], 
                     run_manager=self.execute_task).node)
                 continue
-            
+            if agent == "image":
+                builder.add_node("image", ImageAgent(
+                    llm=self._llm,
+                    name=agent,
+                    prompt=self._prompts[agent],
+                    next=self._data["image"]["next"],
+                    agent=self._agent
+                ).node)
+                continue
             agent_class = self._name_to_class(self._data[agent]["name"])
             logger.info(self._data[agent]["next"])
             logger.info(agent)
@@ -106,4 +117,6 @@ class Shiami:
             return EmailAgent
         elif class_name == "price":
             return PriceAgent
+        elif class_name == "image":
+            return ImageAgent
         return None

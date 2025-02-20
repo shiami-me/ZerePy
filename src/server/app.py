@@ -148,16 +148,20 @@ class ZerePyServer:
             llm = llm_class(config, self.state.cli.agent, False)._get_client()
             shiami = Shiami(
                 agents=["scheduler", "price",
-                        "email_formatter", "report", "email"],
+                        "email_formatter", "report", "email", "image"],
                 llm=llm,
-                prompt="""You are an AI assistant manageing conversations between the agents
-                """,
+                prompt="""You are an AI assistant manageing conversations between the agents. If you get ipfs hash = ba343ei.... then URL = https://ipfs.io/ipfs/ba343ei....""",
                 prompts={
                     "scheduler": """You are a scheduling assistant.""",
                     "price": """You are a cryptocurrency price prediction agent.""",
                     "report": """You are a price report report generating agent based on the given data.""",
                     "email_formatter": """You are an email content formatting agent.""",
-                    "email": """You are an email sending agent. """
+                    "email": """You are an email sending agent. Send email to parth.eng1210@gmail.com""",
+                    "image": """You are an image generation agent. Focus on the image prompt and ignore anything else. Output the image URL - https://ipfs.io/ipfs/[ipfs_hash]
+                    Example - generate an image of roses and send its ipfs URL to....
+                    Here, just focus on "generate an image of roses" and ignore the rest.
+
+                    """
                 },
                 data={
                     "scheduler": {"name": "scheduler", "next": "price"},
@@ -165,11 +169,13 @@ class ZerePyServer:
                     "report": {"name": "text", "next": "email_formatter"},
                     "email_formatter": {"name": "text", "next": "email"},
                     "email": {"name": "email", "next": "FINISH"},
-                }
+                    "image": {"name": "image", "next": "email"}
+                },
+                agent=self.state.cli.agent
             )
 
             shiami.execute_task(
-                "send random email to parth.eng1210@gmail.com every 5 minutes")
+                "generate an image of roses and send its ipfs URL to parth.eng1210@gmail.com. URL = https://ipfs.io/ipfs/[ipfs_hash]")
 
         @self.app.post("/agent/action")
         async def agent_action(action_request: ActionRequest):
