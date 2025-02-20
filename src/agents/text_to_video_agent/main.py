@@ -1,22 +1,19 @@
-from typing import List, Dict, Optional
+from typing import List, Optional
 from pydantic import BaseModel, Field
 from pathlib import Path
 import os
 import shutil
 import cv2
 import win32com.client
-import time
 import logging
 from datetime import datetime
-import random
-from langchain_core.tools import BaseTool, tool
+from langchain_core.tools import tool
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.prebuilt import create_react_agent
 from langgraph_supervisor import create_supervisor
-from langchain_core.messages import AIMessage, ToolMessage
 from pptx import Presentation
 from dotenv import load_dotenv
-from pptx.util import Inches, Pt
+from pptx.util import Pt
 
 # Load environment variables
 load_dotenv()
@@ -82,6 +79,7 @@ class GenerateVideoSchema(BaseModel):
     output_path: str = Field(description="Path where the video file should be saved")   
 
 # Content Generation Tools
+
 def generate_bullet_points(topic: str, main_topic: str, num_points: int = 3) -> List[str]:
     """Generate contextual bullet points for a given topic and main subject"""
     bullet_points_map = {
@@ -363,7 +361,7 @@ def generate_video(images_dir: str, output_path: str) -> str:
                 video.write(frame)
             else:
                 # Hold static slides for 3 seconds
-                for _ in range(90):  # 3 seconds at 30 fps
+                for _ in range(60):
                     video.write(frame)
         
         video.release()
