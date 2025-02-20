@@ -2,6 +2,7 @@ import logging
 import os
 import json
 import uuid
+import faiss
 import asyncio
 import functools
 
@@ -21,6 +22,8 @@ from src.tools.together_tools import get_together_tools
 from src.tools.silo_tools import get_silo_tools
 from src.connections.base_connection import BaseConnection, Action, ActionParameter
 from langgraph.types import Command, interrupt
+from langchain_community.docstore.in_memory import InMemoryDocstore
+from langchain_community.vectorstores import FAISS
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from src.prompts import TAVILY_SEARCH_TOOL_PROMPT
 from langchain_core.documents import Document
@@ -51,9 +54,11 @@ class LLMBaseConnection(BaseConnection):
             self.graph_builder = self._create_conversation_graph()
 
     def setup_tools(self):
-        """Initialize tools for the connection"""
+        """Initialize tools with FAISS for efficient similarity search"""
         try:
             load_dotenv()
+            embedding_model = GoogleGenerativeAIEmbeddings(
+                model="models/text-embedding-004")
 
             if self.config.get("tavily", False):
                 tavily_api_key = os.getenv('TAVILY_API_KEY')
@@ -66,51 +71,38 @@ class LLMBaseConnection(BaseConnection):
                     self.tools.append(self.search_tool)
 
             if "sonic" in self.config.get("plugins", []):
-                sonic_tools = get_sonic_tools(
-                    agent=self._agent, llm=self.get_llm_identifier())
-                self.tools.extend(sonic_tools)
+                self.tools.extend(get_sonic_tools(agent=self._agent, llm=self.get_llm_identifier()))
 
             if "silo" in self.config.get("plugins", []):
-                silo_tools = get_silo_tools(
-                    agent=self._agent, llm=self.get_llm_identifier())
-                self.tools.extend(silo_tools)
+                self.tools.extend(get_silo_tools(agent=self._agent, llm=self.get_llm_identifier()))
 
             if "image" in self.config.get("plugins", []):
-                image_tools = get_together_tools(self._agent)
-                self.tools.extend(image_tools)
-            self.tool_registry = {
-                str(uuid.uuid4()): tool for tool in self.tools
-            }
-            db_uri = os.getenv('POSTGRES_DB_URI')
-            if not db_uri:
-                raise ValueError(
-                    "PostgreSQL connection URI not found in environment")
+                self.tools.extend(get_together_tools(self._agent))
 
-            # Create tool documents with error handling
+            self.tool_registry = {str(uuid.uuid4()): tool for tool in self.tools}
+
             tool_documents = []
-            for id, tool in self.tool_registry.items():
+            for tool_id, tool in self.tool_registry.items():
                 try:
                     doc = Document(
                         page_content=tool.description,
-                        id=id,
+                        id=tool_id,
                         metadata={"tool_name": tool.name},
                     )
                     tool_documents.append(doc)
                 except Exception as e:
-                    logger.error(
-                        f"Error creating document for tool {tool.name}: {e}")
+                    logger.error(f"Error creating document for tool {tool.name}: {e}")
                     continue
 
             if tool_documents:
-                # self.vector_store = PGVector(
-                #     embeddings=GoogleGenerativeAIEmbeddings(model="models/text-embedding-004"),
-                #     collection_name=f"{self.get_llm_identifier()}-tools",
-                #     connection=db_uri,
-                #     use_jsonb=True,
-                # )
-                self.vector_store = InMemoryVectorStore(
-                    embedding=GoogleGenerativeAIEmbeddings(
-                        model="models/text-embedding-004"),
+                # Initialize FAISS
+                embedding_dim = len(embedding_model.embed_query("hello world"))
+                index = faiss.IndexFlatL2(embedding_dim)
+                self.vector_store = FAISS(
+                    embedding_function=embedding_model,
+                    index=index,
+                    docstore=InMemoryDocstore(),
+                    index_to_docstore_id={},
                 )
                 self.vector_store.add_documents(tool_documents)
             else:
