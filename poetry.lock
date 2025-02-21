@@ -4887,7 +4887,7 @@ files = [
 name = "pandas"
 version = "2.2.3"
 description = "Powerful data structures for data analysis, time series, and statistics"
-optional = false
+optional = true
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "(python_version == \"3.11\" or python_version >= \"3.12\") and extra == \"agents\""
@@ -7009,7 +7009,7 @@ dev = ["hypothesis (>=6.70.0)", "pytest (>=7.1.0)"]
 name = "ta"
 version = "0.11.0"
 description = "Technical Analysis Library in Python"
-optional = false
+optional = true
 python-versions = "*"
 groups = ["main"]
 markers = "(python_version == \"3.11\" or python_version >= \"3.12\") and extra == \"agents\""
@@ -8076,4 +8076,4 @@ server = ["fastapi", "requests", "uvicorn"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.13"
-content-hash = "f0a35ba032d9de15dae297eeed08ea0ca403f666e4e07cf88bd8dfdf6b4b7c5f"
+content-hash = "ee96f0db00a4169fa8982c8c04c87913db3012fd65bef79c37fd6aa62e742a3c"

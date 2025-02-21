@@ -10,6 +10,10 @@ SONIC_NETWORKS = {
     "tenderly": {
         "rpc_url": "https://virtual.sonic.rpc.tenderly.co/4524cca9-5fd4-4050-8e54-76098f0196ca",
         "scanner_url": "dashboard.tenderly.co/explorer/vnet/4524cca9-5fd4-4050-8e54-76098f0196ca"
+    },
+    "anvil": {
+        "rpc_url": "http://127.0.0.1:8545",
+        "scanner_url": "https://sonicscan.org"
     }
 }
 

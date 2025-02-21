@@ -160,12 +160,13 @@ class SonicSwapTool(BaseTool):
     description: str = """
     sonic_swap: Swap tokens
     Example: For "Swap 100 S to BTC", use: {"from_token": "S", "to_token": "BTC", "amount": 100}
+    "Swap 1 S to Anon with 5% Slippage", use: {"from_token": "S", "to_token": "Anon", "amount": 1, "slippage": 5.0}
     Swap between any tokens on Sonic. Input should be a JSON string with:
     - from_address: sender address
     - from_token: token to swap from
     - to_token: token to swap to
     - amount: amount to swap
-    - slippage: slippage tolerance (optional)
+    - slippage: slippage tolerance (optional) Default - 5.0
     """
 
     def __init__(self, agent, llm):
@@ -178,8 +179,7 @@ class SonicSwapTool(BaseTool):
             return json.dumps({
                 "error": "Missing required parameters"
             })
-
-        swap_params = {"amount": float(amount), "sender": from_address, "slippage": slippage}
+        swap_params = {"amount": float(amount), "sender": from_address, "slippage": 5.0 if not slippage else float(slippage)}
 
         # Handle from_token
         if from_token.upper() == "S":
@@ -206,15 +206,25 @@ class SonicSwapTool(BaseTool):
             action_name="get-swap-summary",
             **swap_params
         )
-        response = execute_action(
-            agent=self._agent,
-            action_name="swap-sonic",
-            **swap_params
-        )
-        output = {
-            "approve": route_summary,
-            "swap": response
-        }
+        try :
+            response = execute_action(
+                agent=self._agent,
+                action_name="swap-sonic",
+                **swap_params
+            )
+            if response == None:
+                raise Exception("Swap failed. Return amount is too low, please try again with higher slippage")
+            output = {
+                "approve": route_summary,
+                "swap": response
+            }
+        except Exception as e:
+            return json.dumps({
+                "error": str(e),
+                "details": swap_params
+            })
+
+            
         tx_url = self._agent.connection_manager.connections[self._llm].interrupt_chat(
             query=json.dumps(output)
         )
@@ -225,7 +235,6 @@ class SonicSwapTool(BaseTool):
             "tx": tx_url,
             "details": swap_params
         })
-
 def get_sonic_tools(agent, llm) -> list:
     """Return a list of all Sonic-related tools."""
     return [
