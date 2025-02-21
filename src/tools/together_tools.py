@@ -69,6 +69,7 @@ class TogetherImageGenerationTool(BaseTool):
             result = {
                 "status": "success",
                 "message": f"Generated image",
+                "type": "image",
                 "ipfs_hash": response,
                 "parameters": {
                     "prompt": prompt,
