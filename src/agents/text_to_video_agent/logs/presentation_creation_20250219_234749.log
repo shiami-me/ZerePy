@@ -1,6 +1,0 @@
-2025-02-19 23:47:49,153 - INFO - Creating presentation video about The Future of Artificial Intelligence with 5 slides
-2025-02-19 23:47:49,154 - INFO - Generating content
-2025-02-19 23:47:49,179 - ERROR - Error creating presentation: 1 validation error for generate_content
-  Input should be a valid dictionary or instance of generate_content [type=model_type, input_value=PresentationRequest(num_s...', style='professional'), input_type=PresentationRequest]
-    For further information visit https://errors.pydantic.dev/2.10/v/model_type
-2025-02-19 23:47:49,180 - INFO - Cleaning up temporary files
