@@ -20,6 +20,7 @@ from langgraph.graph import StateGraph, START, END
 from src.tools.sonic_tools import get_sonic_tools
 from src.tools.together_tools import get_together_tools
 from src.tools.silo_tools import get_silo_tools
+from src.tools.debridge_tools import get_debridge_tools
 from src.connections.base_connection import BaseConnection, Action, ActionParameter
 from langgraph.types import Command, interrupt
 from langchain_community.docstore.in_memory import InMemoryDocstore
@@ -64,6 +65,7 @@ class LLMBaseConnection(BaseConnection):
                 tavily_api_key = os.getenv('TAVILY_API_KEY')
                 if tavily_api_key:
                     self.search_tool = TavilySearchResults(
+                        name="search_web",
                         description=TAVILY_SEARCH_TOOL_PROMPT,
                         api_key=tavily_api_key,
                         max_results=self.config.get("max_tavily_results", 2)
@@ -78,6 +80,9 @@ class LLMBaseConnection(BaseConnection):
 
             if "image" in self.config.get("plugins", []):
                 self.tools.extend(get_together_tools(self._agent))
+            
+            if "debridge" in self.config.get("plugins", []):
+                self.tools.extend(get_debridge_tools(self._agent))
 
             self.tool_registry = {str(uuid.uuid4()): tool for tool in self.tools}
 

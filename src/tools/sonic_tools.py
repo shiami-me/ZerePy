@@ -159,7 +159,7 @@ class SonicSwapTool(BaseTool):
     name: str = "sonic_swap"
     description: str = """
     sonic_swap: Swap tokens
-    Example: For "Swap 100 S to BTC", use: {"from_token": "S", "to_token": "BTC", "amount": 100}
+    Example: For "Swap 100 Sonic to BTC", use: {"from_token": "S", "to_token": "BTC", "amount": 100}
     "Swap 1 S to Anon with 5% Slippage", use: {"from_token": "S", "to_token": "Anon", "amount": 1, "slippage": 5.0}
     Swap between any tokens on Sonic. Input should be a JSON string with:
     - from_address: sender address

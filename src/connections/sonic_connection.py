@@ -77,6 +77,9 @@ class SonicConnection(BaseConnection):
         try:
             if ticker.lower() in ["s", "S"]:
                 return "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
+            
+            if ticker.lower() in ["usdc", "usdce", "usd"]:
+                return "0x29219dd400f2bf60e5a23d13be72b486d4038894"
                 
             response = requests.get(
                 f"https://api.dexscreener.com/latest/dex/search?q={ticker}"
@@ -313,6 +316,7 @@ class SonicConnection(BaseConnection):
         """Execute a token swap using the KyberSwap router"""
         try:
             # Check token balance before proceeding
+            logger.info(slippage)
             current_balance = self.get_balance(
                 address=sender,
                 token_address=None if token_in.lower() == self.NATIVE_TOKEN.lower() else token_in
@@ -345,6 +349,8 @@ class SonicConnection(BaseConnection):
             try:
                 tx['gas'] = self._web3.eth.estimate_gas(tx)
             except Exception as e:
+                if ("Return amount is not enough" in str(e)):
+                    raise SonicConnectionError("Insufficient output amount. Please try with higher slippage")
                 logger.warning(f"Gas estimation failed: {e}, using default gas limit")
                 tx['gas'] = 500000  # Default gas limit
             

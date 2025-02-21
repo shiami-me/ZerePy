@@ -46,7 +46,10 @@
       "model": "gemini-1.5-flash",
       "tavily": true,
       "max_tavily_results": 3,
-      "plugins": ["sonic", "image", "silo"]
+      "plugins": ["sonic", "image", "silo", "debridge"]
+    },
+    {
+      "name": "debridge"
     },
     {
       "name": "browser_use",
@@ -57,11 +60,11 @@
     },
     {
       "name": "sonic",
-      "network": "tenderly"
+      "network": "anvil"
     },
     {
       "name": "silo",
-      "network": "tenderly"
+      "network": "anvil"
     }
   ],
   "tasks": [
