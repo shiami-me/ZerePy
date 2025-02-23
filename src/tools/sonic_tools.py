@@ -2,6 +2,7 @@ from langchain.tools import BaseTool
 import json
 import logging
 from src.action_handler import execute_action
+from .price_tools import GetTokenPriceTool
 
 logger = logging.getLogger("tools.sonic_tools")
 
@@ -241,5 +242,6 @@ def get_sonic_tools(agent, llm) -> list:
         SonicTokenLookupTool(agent),
         SonicBalanceCheckTool(agent),
         SonicTokenTransferTool(agent, llm),
-        SonicSwapTool(agent, llm)
+        SonicSwapTool(agent, llm),
+        GetTokenPriceTool()
     ]
