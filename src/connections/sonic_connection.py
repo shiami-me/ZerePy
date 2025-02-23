@@ -359,6 +359,16 @@ class SonicConnection(BaseConnection):
         except Exception as e:
             logger.error(f"Swap failed: {e}")
             raise
+    def estimate_gas(self, tx: Dict) -> Dict:
+        """Estimate gas for a transaction"""
+        try:
+            estimated_gas = self._web3.eth.estimate_gas(tx)
+            tx['gas'] = int(estimated_gas * 1.1)
+            tx["gasPrice"] = self._web3.eth.gas_price
+            return tx
+        except Exception as e:
+            logger.error(f"Gas estimation failed: {e}")
+            raise SonicConnectionError(f"Failed to estimate gas: {e}")
     def perform_action(self, action_name: str, kwargs) -> Any:
         """Execute a Sonic action with validation"""
         if action_name not in self.actions:

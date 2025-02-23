@@ -11,36 +11,6 @@ logger = logging.getLogger("tools.debridge_tools")
 
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
-def get_token_by_ticker(ticker: str, chain: str) -> Optional[str]:
-    """Get token address by ticker symbol"""
-    try:
-        logger.info(chain)
-        response = requests.get(
-            f"https://api.dexscreener.com/latest/dex/search?q={ticker}"
-        )
-        response.raise_for_status()
-
-        data = response.json()
-        if not data.get('pairs'):
-            return None
-        pairs = [
-            pair for pair in data["pairs"] if chain.lower() in pair.get("chainId")
-        ]
-        pairs.sort(key=lambda x: x.get("fdv", 0), reverse=True)
-
-        pairs = [
-            pair
-            for pair in pairs
-            if pair.get("baseToken", {}).get("symbol", "").lower() == ticker.lower()
-        ]
-
-        if pairs:
-            return pairs[0].get("baseToken", {}).get("address")
-        return None
-    except Exception as e:
-        logger.error(f"Error getting token by ticker: {e}")
-        return None
-
 class DebridgeBridgeTool(BaseTool):
     name: str = "debridge_tx"
     description: str = """
@@ -66,19 +36,11 @@ class DebridgeBridgeTool(BaseTool):
             # Get chain IDs
             dstChainId = self._chain_id_store.get_chain_id(dstChain)
 
-            # Check if source token is native
-            if self._chain_id_store.is_native_token(dstChain, srcChainTokenIn):
+            srcToken = json.loads(SonicTokenLookupTool(self._agent)._run(srcChainTokenIn))["address"]
+            if not srcToken: 
                 srcToken = ZERO_ADDRESS
-            else:
-                srcToken = json.loads(SonicTokenLookupTool(self._agent)._run(srcChainTokenIn))["address"]
-                if not srcToken: 
-                    srcToken = ZERO_ADDRESS
 
-            # Check if destination token is native
-            if self._chain_id_store.is_native_token(dstChain, dstChainTokenOut):
-                dstToken = ZERO_ADDRESS
-            else:
-                dstToken = get_token_by_ticker(dstChainTokenOut, dstChain)
+            dstToken = self._agent.connection_manager.connections["debridge"].get_token_address(dstChainId, dstChainTokenOut)
 
             logger.info(f"Bridging {srcChainTokenInAmount} {srcChainTokenIn} to {dstChainTokenOut} on {dstChain}")
             logger.info(f"Source Token: {srcToken}, Destination Token: {dstToken}, Destination Chain ID: {dstChainId}")
@@ -102,11 +64,14 @@ class DebridgeBridgeTool(BaseTool):
             srcChainTokenIn = estimation.get("srcChainTokenIn", {})
             dstChainTokenOut = estimation.get("dstChainTokenOut", {})
             tx = response.get("tx", {})
-
+            if tx["to"]:
+                tx = self._agent.connection_manager.connections["sonic"].estimate_gas(tx)
+            elif tx["allowanceTarget"]:
+                tx["to"] = tx["allowanceTarget"]
             approve_transaction = {
                 "approve": {
-                    "amountIn": srcChainTokenIn.get("amount", "0"),
-                    "amountOut": dstChainTokenOut.get("amount", "0"),
+                    "amountIn": srcChainTokenIn.get("amount", "0") / (10**(srcChainTokenIn.get("decimals", 18))),
+                    "amountOut": dstChainTokenOut.get("amount", "0") / (10**(dstChainTokenOut.get("decimals", 18))),
                     "amountInUsd": srcChainTokenIn.get("approximateUsdValue", 0),
                     "amountOutUsd": dstChainTokenOut.get("approximateUsdValue", 0),
                     "gas": int(tx.get("gas", "0")),

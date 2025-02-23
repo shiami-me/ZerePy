@@ -15,7 +15,7 @@ class DebridgeConnection(BaseConnection):
     
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self.api_url = "https://dln.debridge.finance/v1.0/dln/order/create-tx"
+        self.api_url = "https://dln.debridge.finance/v1.0"
         self._initialize()
 
     def _initialize(self):
@@ -46,6 +46,14 @@ class DebridgeConnection(BaseConnection):
                 ActionParameter(name='dstChainTokenOut', type=str, required=True, description='Destination chain token address'),
                 ActionParameter(name='dstChainTokenOutAmount', type=str, required=True, description='Amount of destination chain token'),
                 ActionParameter(name='dstChainTokenOutRecipient', type=str, required=True, description='Recipient address on destination chain'),
+            ]
+        )
+        self.actions['get_token_address'] = Action(
+            name='get_token_address',
+            description='Get token address on Debridge',
+            parameters=[
+                ActionParameter(name='chainId', type=int, required=True, description='Chain ID'),
+                ActionParameter(name='tokenSymbol', type=str, required=True, description='Token symbol'),
             ]
         )
 
@@ -93,18 +101,37 @@ class DebridgeConnection(BaseConnection):
                 "dstChainId": dstChainId,
                 "dstChainTokenOut": dstChainTokenOut,
                 "dstChainTokenOutAmount": dstChainTokenOutAmount,
+                "prependOperatingExpense": True,
                 "dstChainTokenOutRecipient": dstChainTokenOutRecipient,
                 "srcChainOrderAuthorityAddress": dstChainTokenOutRecipient,
                 "dstChainOrderAuthorityAddress": dstChainTokenOutRecipient,
                 "accesstoken": self.access_key
             }
             
-            response = requests.get(self.api_url, params=params)
+            response = requests.get(f"{self.api_url}/dln/order/create-tx", params=params)
             response.raise_for_status()
             return response.json()
             
         except Exception as e:
             raise DebridgeConnectionError(f"Failed to bridge assets: {str(e)}")
+        
+    def get_token_address(self, chainId: int, token: str) -> str:
+        """Get the token address on a specific chain by partial match of name or symbol"""
+        try:
+            params = {"chainId": chainId}
+            response = requests.get(f"{self.api_url}/token-list", params=params)
+            response.raise_for_status()
+            tokens = response.json().get("tokens", {})
+
+            token = token.lower()
+            for address, details in tokens.items():
+                if token in details["symbol"].lower() or token in details["name"].lower():
+                    return address
+
+            return None
+
+        except Exception as e:
+            raise DebridgeConnectionError(f"Failed to get token address: {str(e)}")
 
     def perform_action(self, action_name: str, kwargs) -> Any:
         """Execute a Debridge action with validation"""
