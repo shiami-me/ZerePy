@@ -11,12 +11,17 @@ from pypfopt import EfficientFrontier, risk_models, expected_returns, objective_
 from langchain.agents import Tool
 from langchain_google_genai import ChatGoogleGenerativeAI
 from typing import Dict, List, Optional
+from datetime import datetime, timedelta
+import yfinance as yf
+
 
 # Load environment variables
 load_dotenv()
 
 
 # Add at the beginning of the file, after the imports
+
+
 
 class RiskManager:
     def __init__(self):
@@ -186,6 +191,8 @@ class PortfolioState(TypedDict):
     market_analysis: Dict[str, any]
     conversation_history: List[str]
     status: str
+
+
 
 class MarketAnalyzer:
     def __init__(self):
@@ -469,16 +476,120 @@ class YieldOptimizer:
         self,
         asset: str
     ) -> List[Dict]:
-        # Implement LP opportunity fetching
-        return []
+        opportunities = []
+        
+        # Define common LP pairs for different assets
+        lp_pairs = {
+            'ETH': [
+                {'pair': 'ETH-USDC', 'protocol': 'uniswap', 'base_apy': 0.15},
+                {'pair': 'ETH-USDT', 'protocol': 'sushiswap', 'base_apy': 0.14}, 
+                {'pair': 'ETH-DAI', 'protocol': 'curve', 'base_apy': 0.12}
+            ],
+            'USDC': [
+                {'pair': 'USDC-ETH', 'protocol': 'uniswap', 'base_apy': 0.15},
+                {'pair': 'USDC-USDT', 'protocol': 'curve', 'base_apy': 0.08},
+                {'pair': 'USDC-DAI', 'protocol': 'balancer', 'base_apy': 0.07}
+            ],
+            'BTC': [
+                {'pair': 'BTC-ETH', 'protocol': 'sushiswap', 'base_apy': 0.16},
+                {'pair': 'BTC-USDC', 'protocol': 'uniswap', 'base_apy': 0.14},
+                {'pair': 'BTC-USDT', 'protocol': 'curve', 'base_apy': 0.13}
+            ]
+        }
+        
+        if asset in lp_pairs:
+            for pool in lp_pairs[asset]:
+                try:
+                    # Add randomization to APY to simulate market conditions
+                    apy_variation = np.random.uniform(-0.02, 0.02)
+                    current_apy = pool['base_apy'] + apy_variation
+                    
+                    # Get pool metrics
+                    pool_metrics = {
+                        'tvl': np.random.uniform(1000000, 10000000),
+                        'volume_24h': np.random.uniform(100000, 1000000),
+                        'fee_tier': np.random.choice([0.001, 0.003, 0.005])
+                    }
+                    
+                    opportunities.append({
+                        'type': 'liquidity_pool',
+                        'protocol': pool['protocol'],
+                        'pair': pool['pair'],
+                        'asset': asset,
+                        'apy': max(current_apy, 0),
+                        'risk_metrics': {
+                            'tvl': pool_metrics['tvl'],
+                            'volume_24h': pool_metrics['volume_24h'],
+                            'fee_tier': pool_metrics['fee_tier'],
+                            'impermanent_loss_risk': self._calculate_il_risk(pool['pair']),
+                            'pool_concentration': np.random.uniform(0.1, 0.9)
+                        },
+                        'requirements': {
+                            'min_amount': 100,  # Minimum liquidity requirement
+                            'tokens_needed': pool['pair'].split('-')
+                        }
+                    })
+                except Exception as e:
+                    print(f"Error fetching {pool['protocol']} LP data: {e}")
+                    continue
+                    
+        return opportunities    
     
     async def _get_staking_opportunities(
         self,
         asset: str
     ) -> List[Dict]:
-        # Implement staking opportunity fetching
-        return []
-    
+        opportunities = []
+        
+        # Define staking protocols and their base APYs
+        staking_protocols = {
+            'ETH': [
+                {'protocol': 'lido', 'base_apy': 0.04},
+                {'protocol': 'rocketpool', 'base_apy': 0.045},
+                {'protocol': 'stakewise', 'base_apy': 0.042}
+            ],
+            'SOL': [
+                {'protocol': 'marinade', 'base_apy': 0.06},
+                {'protocol': 'lido', 'base_apy': 0.058}
+            ],
+            'DOT': [
+                {'protocol': 'kraken', 'base_apy': 0.12},
+                {'protocol': 'binance', 'base_apy': 0.115}
+            ],
+            'ADA': [
+                {'protocol': 'binance', 'base_apy': 0.08},
+                {'protocol': 'kraken', 'base_apy': 0.075}
+            ]
+        }
+        
+        if asset in staking_protocols:
+            for protocol in staking_protocols[asset]:
+                try:
+                    # Add some randomization to APY to simulate market conditions
+                    apy_variation = np.random.uniform(-0.005, 0.005)
+                    current_apy = protocol['base_apy'] + apy_variation
+                    
+                    opportunities.append({
+                        'type': 'staking',
+                        'protocol': protocol['protocol'],
+                        'asset': asset,
+                        'apy': max(current_apy, 0),  # Ensure APY doesn't go negative
+                        'risk_metrics': {
+                            'protocol_risk': self._get_protocol_risk(protocol['protocol']),
+                            'lockup_period': self._get_lockup_period(protocol['protocol']),
+                            'min_stake': self._get_min_stake(protocol['protocol'])
+                        },
+                        'requirements': {
+                            'min_amount': self._get_min_stake(protocol['protocol']),
+                            'lockup_period': self._get_lockup_period(protocol['protocol'])
+                        }
+                    })
+                except Exception as e:
+                    print(f"Error fetching {protocol['protocol']} staking data: {e}")
+                    continue
+                    
+        return opportunities  
+      
     def _combine_opportunities(
         self,
         lending_ops: List[Dict],
@@ -607,14 +718,13 @@ def calculate_risk_tolerance(
         weights['market_conditions'] * market_score
     )
     
-    # 6. Apply market condition adjustments
     risk_tolerance = _adjust_for_market_conditions(
         risk_tolerance,
         market_analysis,
         risk_metrics
     )
     
-    return min(max(risk_tolerance, 0.0), 1.0)  # Ensure bounds
+    return min(max(risk_tolerance, 0.0), 1.0)  
 
 def _calculate_risk_score(risk_metrics: Dict[str, float]) -> float:
     """
@@ -627,16 +737,16 @@ def _calculate_risk_score(risk_metrics: Dict[str, float]) -> float:
     anomaly_score = risk_metrics.get('anomaly_score', 0)
     
     # Normalize metrics
-    norm_volatility = min(volatility / 0.5, 1.0)  # Cap at 50% volatility
-    norm_var = min(var_95 / 0.3, 1.0)  # Cap at 30% VaR
-    norm_es = min(es_95 / 0.4, 1.0)  # Cap at 40% ES
+    norm_volatility = min(volatility / 0.5, 1.0)  
+    norm_var = min(var_95 / 0.3, 1.0)  
+    norm_es = min(es_95 / 0.4, 1.0)  
     
     # Combine metrics with weights
     risk_score = (
-        0.4 * (1 - norm_volatility) +  # Lower volatility = higher score
-        0.3 * (1 - norm_var) +         # Lower VaR = higher score
-        0.2 * (1 - norm_es) +          # Lower ES = higher score
-        0.1 * (1 - anomaly_score)      # Lower anomaly score = higher score
+        0.4 * (1 - norm_volatility) + 
+        0.3 * (1 - norm_var) +        
+        0.2 * (1 - norm_es) +          
+        0.1 * (1 - anomaly_score)      
     )
     
     return risk_score
@@ -711,6 +821,54 @@ def _adjust_for_market_conditions(
     
     return min(max(adjusted_tolerance, 0.0), 1.0)  # Ensure bounds
 
+
+def get_sample_market_data():
+    """Get sample market data using yfinance"""
+    assets = ['ETH-USD', 'BTC-USD', 'USDC-USD']
+    
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=60)
+    
+    data = pd.DataFrame()
+    for asset in assets:
+        try:
+            ticker_data = yf.download(asset, start=start_date, end=end_date)
+            if not ticker_data.empty:
+                data[asset] = ticker_data['Close']
+        except Exception as e:
+            print(f"Error fetching data for {asset}: {e}")
+    
+    return data
+
+
+def fetch_wallet_data(state: PortfolioState) -> PortfolioState:
+    """
+    Fetches wallet data and market data for the portfolio
+    """
+    try:
+        # Sample wallet address - replace with actual wallet address
+        wallet_address = state.get('wallet_address', '')
+        
+        # Fetch market data
+        market_data = get_sample_market_data()
+        
+        # Sample portfolio data - in production, you would fetch this from the blockchain
+        portfolio = {
+            'ETH-USD': 2.0,    # 2 ETH
+            'BTC-USD': 0.1,    # 0.1 BTC
+            'USDC-USD': 5000   # 5000 USDC
+        }
+        
+        # Update state
+        state['market_data'] = market_data
+        state['portfolio'] = portfolio
+        state['status'] = 'success'
+        
+    except Exception as e:
+        state['status'] = 'error'
+        state['error'] = str(e)
+    
+    return state
 def rebalance_portfolio(state: PortfolioState) -> PortfolioState:
     """Main rebalancing function"""
     try:
@@ -756,3 +914,74 @@ workflow.add_edge("rebalance", END)
 
 # Compile workflow
 agent = workflow.compile()
+
+def main():
+    # Create initial state
+    initial_state = PortfolioState(
+        wallet_address="0x742d35Cc6634C0532925a3b844Bc454e4438f44e",  # Example address
+        portfolio={},
+        market_data=pd.DataFrame(),
+        risk_metrics={},
+        rebalance_recommendations={},
+        yield_opportunities=[],
+        market_analysis={},
+        conversation_history=[],
+        status="initialized"
+    )
+
+    try:
+        # Run the workflow
+        final_state = agent.invoke(initial_state)
+        
+        # Print results
+        print("\nFinal Portfolio State:")
+        print(f"Status: {final_state['status']}")
+        if final_state['status'] == 'success':
+            print("\nPortfolio:")
+            for asset, amount in final_state['portfolio'].items():
+                print(f"{asset}: {amount}")
+            
+            print("\nRisk Metrics:")
+            for metric, value in final_state['risk_metrics'].items():
+                print(f"{metric}: {value}")
+            
+            print("\nMarket Analysis:")
+            for key, value in final_state['market_analysis'].items():
+                print(f"{key}: {value}")
+            
+            if 'rebalance_recommendations' in final_state:
+                print("\nRebalancing Recommendations:")
+                for asset, rec in final_state['rebalance_recommendations'].items():
+                    print(f"{asset}: {rec}")
+        else:
+            print(f"Error: {final_state.get('error', 'Unknown error')}")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+if __name__ == "__main__":
+    # Initialize components and workflow
+    risk_manager = RiskManager()
+    market_analyzer = MarketAnalyzer()
+    portfolio_optimizer = PortfolioOptimizer()
+    yield_optimizer = YieldOptimizer()
+
+    # Build workflow
+    workflow = StateGraph(PortfolioState)
+
+    # Add nodes
+    workflow.add_node("fetch_data", fetch_wallet_data)
+    workflow.add_node("rebalance", rebalance_portfolio)
+
+    # Set workflow
+    workflow.set_entry_point("fetch_data")
+    workflow.add_edge("fetch_data", "rebalance")
+    workflow.add_edge("rebalance", END)
+
+    # Compile workflow
+    agent = workflow.compile()
+
+    # Run main function
+    main()
+
+

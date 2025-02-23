@@ -73,6 +73,8 @@ python-pptx = "^1.0.2"
 comtypes = "^1.4.10"
 pillow = "^11.1.0"
 cairocffi = "^1.7.1"
+pyportfolioopt = "^1.5.6"
+yfinance = "^0.2.54"
 
 [tool.poetry.extras]
 server = ["fastapi", "uvicorn", "requests"]
