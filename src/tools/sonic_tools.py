@@ -166,7 +166,7 @@ class SonicSwapTool(BaseTool):
     - from_token: token to swap from
     - to_token: token to swap to
     - amount: amount to swap
-    - slippage: slippage tolerance (optional) Default - 5.0
+    - slippage: slippage tolerance (optional) Default - 0.5
     """
 
     def __init__(self, agent, llm):
@@ -179,7 +179,7 @@ class SonicSwapTool(BaseTool):
             return json.dumps({
                 "error": "Missing required parameters"
             })
-        swap_params = {"amount": float(amount), "sender": from_address, "slippage": 5.0 if not slippage else float(slippage)}
+        swap_params = {"amount": float(amount), "sender": from_address, "slippage": 0.5 if not slippage else float(slippage)}
 
         # Handle from_token
         if from_token.upper() == "S":

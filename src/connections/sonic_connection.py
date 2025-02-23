@@ -312,7 +312,7 @@ class SonicConnection(BaseConnection):
             logger.error(f"Approval failed: {e}")
             raise
 
-    def swap(self, sender: str, token_in: str, token_out: str, amount: float, slippage: float = 5.0) -> Dict:
+    def swap(self, sender: str, token_in: str, token_out: str, amount: float, slippage: float = 0.5) -> Dict:
         """Execute a token swap using the KyberSwap router"""
         try:
             # Check token balance before proceeding
