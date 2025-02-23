@@ -25,12 +25,20 @@ class GetTokenPriceTool(BaseTool):
 
     def _run(self, token: str) -> Dict[str, Any]:
         try:
-            response = requests.get(f"https://api.dexscreener.com/latest/dex/search?q={token}/USDC")
-            response.raise_for_status()
-            data = response.json()
-            for pair in data["pairs"]:
-                if pair["chainId"] == "sonic" and (pair["baseToken"]["symbol"].lower() == token.lower() or pair["baseToken"]["name"].lower() == token.lower()):
-                    return {"price": f"${pair["priceUsd"]}"}
+            if token.lower() in ["s", "sonic"]:
+                response = requests.get("https://api.dexscreener.com/token-pairs/v1/sonic/0x039e2fB66102314Ce7b64Ce5Ce3E5183bc94aD38")
+                response.raise_for_status()
+                data = response.json()
+                for pair in data:
+                    if pair["baseToken"]["address"] == "0x039e2fB66102314Ce7b64Ce5Ce3E5183bc94aD38":
+                        return {"price": f"${pair["priceUsd"]}"}
+            else: 
+                response = requests.get(f"https://api.dexscreener.com/latest/dex/search?q={token}/USDC")
+                response.raise_for_status()
+                data = response.json()
+                for pair in data["pairs"]:
+                    if pair["chainId"] == "sonic" and (pair["baseToken"]["symbol"].lower() == token.lower() or pair["baseToken"]["name"].lower() == token.lower()):
+                        return {"price": f"${pair["priceUsd"]}"}
             return {"error": f"Token {token} not found. Please not that we currently support only Sonic chain."}
         except Exception as e:
             return {"error": f"Failed to get token price: {str(e)}"}
