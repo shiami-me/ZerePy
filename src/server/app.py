@@ -137,7 +137,7 @@ class ZerePyServer:
                 raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.post("/agent/create")
-        async def create_agent():
+        async def create_agent(background_tasks: BackgroundTasks):
             model_provider = self.state.cli.agent.model_provider
             llm_class: Type[LLMBaseConnection] = self.state.cli.agent.connection_manager._class_name_to_type(
                 model_provider)
@@ -174,9 +174,10 @@ class ZerePyServer:
                 agent=self.state.cli.agent
             )
 
-            shiami.execute_task(
-                "generate an image of roses and send its ipfs URL to parth.eng1210@gmail.com. URL = https://ipfs.io/ipfs/[ipfs_hash]")
-
+            background_tasks.add_task(
+                shiami.execute_task,
+                "generate an image of roses and send its ipfs URL to parth.eng1210@gmail.com. URL = https://ipfs.io/ipfs/[ipfs_hash]"
+            )
         @self.app.post("/agent/action")
         async def agent_action(action_request: ActionRequest):
             """Execute a single agent action"""

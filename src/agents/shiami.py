@@ -10,7 +10,6 @@ from .scheduler_agent import SchedulerAgent
 from .price_agent import PriceAgent
 from .email_agent import EmailAgent
 from .image_agent import ImageAgent
-from ..utils.vector_store_utils import VectorStoreUtils
 
 logger = logging.getLogger("agent/shiami")
 
@@ -93,9 +92,9 @@ class Shiami:
 
         return Command(goto=goto, update={"next": goto})
 
-    def execute_task(self, message: str):
+    async def execute_task(self, message: str):
         try:
-            for s in self.graph.stream(
+            async for s in self.graph.astream(
                 {
                     "messages": [("user", message)]
                 },
