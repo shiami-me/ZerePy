@@ -222,6 +222,30 @@ class SonicConnection(BaseConnection):
         except Exception as e:
             logger.error(f"Transfer failed: {e}")
             raise
+    
+    def wrap_sonic(self, sender: str, amount: float) -> Dict:
+        """S to wS"""
+        try:
+            chain_id = self._web3.eth.chain_id
+            contract = self._web3.eth.contract(
+                address=Web3.to_checksum_address("0x039e2fB66102314Ce7b64Ce5Ce3E5183bc94aD38"),
+                abi=self.ERC20_ABI
+            )
+            amount_raw = int(amount * (10 ** 18))
+
+            tx = {
+                'to': "0x039e2fB66102314Ce7b64Ce5Ce3E5183bc94aD38",
+                'from': sender,
+                'gasPrice': self._web3.eth.gas_price,
+                'chainId': chain_id,
+                'value': amount_raw
+            }
+            
+            tx["gas"] = self._web3.eth.estimate_gas(tx)
+
+            return tx
+        except Exception as e:
+            logger.error(f"Failed to wrap Sonic: {e}")
 
     def _get_swap_route(self, token_in: str, token_out: str, amount_in: float) -> Dict:
         """Get the best swap route from Kyberswap API"""

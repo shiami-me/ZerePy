@@ -156,6 +156,41 @@ class SonicTokenTransferTool(BaseTool):
             "details": transfer_params,
         })
 
+class SonicWrapTool(BaseTool):
+    name: str = "sonic_wrap"
+    description: str = """
+    sonic_wrap: Wrap tokens
+    Example: For "Wrap 100 S(sonic)", use: {"amount": 100}
+    - address: sender address (connected wallet)
+    - amount: amount to wrap
+    """
+
+    def __init__(self, agent):
+        super().__init__()
+        self._agent = agent
+
+    def _run(self, address: str, amount: float) -> str:
+        if not all([address, amount]):
+            return json.dumps({
+                "error": "Missing required parameters"
+            })
+
+        wrap_params = {
+            "sender": address,
+            "amount": float(amount)
+        }
+        
+        logger.info(f"Wrapping {amount}")
+
+        response = execute_action(
+            agent=self._agent,
+            action_name="wrap-sonic",
+            **wrap_params
+        )
+        response["type"] = "wrap"
+
+        return json.dumps(response)
+
 class SonicSwapTool(BaseTool):
     name: str = "sonic_swap"
     description: str = """
@@ -245,5 +280,6 @@ def get_sonic_tools(agent, llm) -> list:
         SonicBalanceCheckTool(agent),
         SonicTokenTransferTool(agent, llm),
         SonicSwapTool(agent, llm),
+        SonicWrapTool(agent),
         GetTokenPriceTool()
     ]

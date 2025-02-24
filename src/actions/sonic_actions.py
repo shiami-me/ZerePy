@@ -29,7 +29,7 @@ def get_token_by_ticker(agent, **kwargs):
 
 @register_action("get-sonic-balance")
 def get_sonic_balance(agent, **kwargs):
-    """Get $S or token balance"""
+    """Get S or token balance"""
     try:
         address = kwargs.get("address")
         token_address = kwargs.get("token_address")
@@ -42,7 +42,7 @@ def get_sonic_balance(agent, **kwargs):
         if token_address:
             logger.info(f"Token Balance: {balance}")
         else:
-            logger.info(f"$S Balance: {balance}")
+            logger.info(f"S Balance: {balance}")
             
         return balance
 
@@ -117,6 +117,24 @@ def get_swap_summary(agent, **kwargs):
         logger.error(f"Failed to get summary: {str(e)}")
         return None
 
+@register_action("wrap-sonic")
+def wrap_sonic(agent, **kwargs):
+    """Wrap $S tokens"""
+    try:
+        sender = kwargs.get("sender")
+        amount = float(kwargs.get("amount"))
+
+        tx = agent.connection_manager.connections["sonic"].wrap_sonic(
+            sender=sender,
+            amount=amount
+        )
+
+        logger.info(f"Wrapping {amount} S")
+        return tx
+
+    except Exception as e:
+        logger.error(f"Failed to wrap S: {str(e)}")
+        return None
 
 @register_action("swap-sonic")
 def swap_sonic(agent, **kwargs):
@@ -128,7 +146,7 @@ def swap_sonic(agent, **kwargs):
         amount = float(kwargs.get("amount"))
         slippage = float(kwargs.get("slippage", 0.5))
 
-        tx_url = agent.connection_manager.connections["sonic"].swap(
+        tx = agent.connection_manager.connections["sonic"].swap(
             sender=sender,
             token_in=token_in,
             token_out=token_out,
@@ -137,7 +155,7 @@ def swap_sonic(agent, **kwargs):
         )
 
         logger.info(f"Swapping {amount} tokens")
-        return tx_url
+        return tx
 
     except Exception as e:
         logger.error(f"Failed to swap tokens: {str(e)}")
