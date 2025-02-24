@@ -175,7 +175,7 @@ class SonicSwapTool(BaseTool):
         self._agent = agent
         self._llm = llm
 
-    def _run(self, from_address: str, from_token: str, to_token: str, amount: float, slippage: float) -> str:
+    def _run(self, from_address: str, from_token: str, to_token: str, amount: float, slippage: float = 0.5) -> str:
         if not all([from_address, from_token, to_token, amount]):
             return json.dumps({
                 "error": "Missing required parameters"
@@ -215,6 +215,8 @@ class SonicSwapTool(BaseTool):
             )
             if response == None:
                 raise Exception("Swap failed. Return amount is too low, please try again with higher slippage")
+            route_summary["amountIn"] = str(int(route_summary["amountIn"]) / (10 ** 18))
+            route_summary["amountOut"] = str(int(route_summary["amountOut"]) / (10 ** 18))
             output = {
                 "approve": route_summary,
                 "swap": response
