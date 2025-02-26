@@ -27,11 +27,11 @@ class BeetsSwapTool(BaseTool):
     Input should be a JSON string with:
     - tokenIn: Token symbol, name or address to swap from (required)
     - tokenOut: Token symbol, name or address to swap to (required)
-    - slippage: Slippage tolerance (e.g. 0.01 for 1%) (required)
+    - slippage: Slippage tolerance (e.g. 1 for 1%) (required)
     - userAddress: User address (required)
     - poolId: Pool ID to use for the swap (optional)
     
-    Example: Swap 1 ETH for USDC. Use: {"tokenIn": "ETH", "tokenOut": "USDC", "slippage": 0.01, "userAddress": "0xUser.."}
+    Example: Swap 1 ETH for USDC. Use: {"tokenIn": "ETH", "tokenOut": "USDC", "slippage": 1, "userAddress": "0xUser.."}
     """
 
     def __init__(self, agent):
@@ -110,7 +110,7 @@ class BeetsAddLiquidityTool(BaseTool):
     - version: "v2" or "v3" (required)
     - poolId: Pool ID (required)
     - slippage: Slippage tolerance (required)
-    - userAddress: User wallet address (required)
+    - userAddress: User wallet address - Connected Wallet (required)
     
     Additional parameters based on type:
     - For proportional: 
@@ -129,8 +129,8 @@ class BeetsAddLiquidityTool(BaseTool):
         amountsIn: Array of {token: symbol/address, amount: value} objects
     
     Examples:
-    - Proportional: {"type": "proportional", "version": "v3", "referenceToken": "USDC", "referenceAmount": 100, "poolId": "0xabc", "slippage": 0.01, "userAddress": "0xUser.."}
-    - Unbalanced: {"type": "unbalanced", "version": "v3", "amountsIn": [{"token": "USDC", "amount": 100}, {"token": "ETH", "amount": 0.5}], "poolId": "0xabc", "slippage": 0.01, "userAddress": "0xUser.."}
+    - Proportional: {"type": "proportional", "version": "v3", "referenceToken": "USDC", "referenceAmount": 100, "poolId": "0xabc", "slippage": 1, "userAddress": "0xUser.."}
+    - Unbalanced: {"type": "unbalanced", "version": "v3", "amountsIn": [{"token": "USDC", "amount": 100}, {"token": "ETH", "amount": 0.5}], "poolId": "0xabc", "slippage": 1, "userAddress": "0xUser.."}
     """
 
     def __init__(self, agent):
@@ -329,11 +329,11 @@ class BeetsRemoveLiquidityTool(BaseTool):
         amountsOut: Array of {token: symbol/address, amount: value} objects 
     
     Examples:
-    - Proportional: {"type": "proportional", "version": "v3", "bptAmount": 10, "poolId": "0xabc", "slippage": 0.01, "userAddress": "0xUser.."}
-    - Single token (exact in): {"type": "single-token-exact-in", "version": "v3", "bptAmount": 10, "tokenOut": "USDC", "poolId": "0xabc", "slippage": 0.01, "userAddress": "0xUser.."}
-    - Single token (exact out): {"type": "single-token-exact-out", "version": "v2", "tokenOut": "USDC", "amountOut": 100, "poolId": "0xabc", "slippage": 0.01, "userAddress": "0xUser.."}
-    - Unbalanced: {"type": "unbalanced", "version": "v2", "amountsOut": [{"token": "USDC", "amount": 100}, {"token": "ETH", "amount": 0.5}], "poolId": "0xabc", "slippage": 0.01, "userAddress": "0xUser.."}
-    - Boosted proportional: {"type": "boosted-proportional", "version": "v3", "bptAmount": 10, "poolId": "0xabc", "slippage": 0.01, "userAddress": "0xUser.."}
+    - Proportional: {"type": "proportional", "version": "v3", "bptAmount": 10, "poolId": "0xabc", "slippage": 1, "userAddress": "0xUser.."}
+    - Single token (exact in): {"type": "single-token-exact-in", "version": "v3", "bptAmount": 10, "tokenOut": "USDC", "poolId": "0xabc", "slippage": 1, "userAddress": "0xUser.."}
+    - Single token (exact out): {"type": "single-token-exact-out", "version": "v2", "tokenOut": "USDC", "amountOut": 100, "poolId": "0xabc", "slippage": 1, "userAddress": "0xUser.."}
+    - Unbalanced: {"type": "unbalanced", "version": "v2", "amountsOut": [{"token": "USDC", "amount": 100}, {"token": "ETH", "amount": 0.5}], "poolId": "0xabc", "slippage": 1, "userAddress": "0xUser.."}
+    - Boosted proportional: {"type": "boosted-proportional", "version": "v3", "bptAmount": 10, "poolId": "0xabc", "slippage": 1, "userAddress": "0xUser.."}
     """
 
     def __init__(self, agent):
@@ -631,13 +631,9 @@ class BeetsPoolsQueryTool(BaseTool):
                 textSearch=textSearch
             )
             
-            # Count pools in response
-            pools_count = len(response.get("pools", [])) if isinstance(response, dict) and "pools" in response else 0
-            
             return json.dumps({
                 "status": "success", 
                 "data": response,
-                "message": f"Found {pools_count} pools matching the criteria"
             })
 
         except RequestException as e:
