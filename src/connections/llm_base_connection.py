@@ -21,6 +21,7 @@ from src.tools.sonic_tools import get_sonic_tools
 from src.tools.together_tools import get_together_tools
 from src.tools.silo_tools import get_silo_tools
 from src.tools.debridge_tools import get_debridge_tools
+from src.tools.beets_tools import get_beets_tools
 from src.connections.base_connection import BaseConnection, Action, ActionParameter
 from langgraph.types import Command, interrupt
 from langchain_community.docstore.in_memory import InMemoryDocstore
@@ -29,6 +30,7 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from src.prompts import TAVILY_SEARCH_TOOL_PROMPT
 from langchain_core.documents import Document
 from langgraph.prebuilt import tools_condition, ToolNode
+from src.utils.stores.docs_store import DocsStore
 
 logger = logging.getLogger("connections.llm_base_connection")
 
@@ -83,6 +85,11 @@ class LLMBaseConnection(BaseConnection):
             
             if "debridge" in self.config.get("plugins", []):
                 self.tools.extend(get_debridge_tools(self._agent))
+            
+            if "beets" in self.config.get("plugins", []):
+                self.tools.extend(get_beets_tools(self._agent))
+            
+            self.tools.extend([DocsStore().retriever_tool])
 
             self.tool_registry = {str(uuid.uuid4()): tool for tool in self.tools}
 

@@ -23,6 +23,7 @@ from src.connections.allora_connection import AlloraConnection
 from src.connections.xai_connection import XAIConnection
 from src.connections.ethereum_connection import EthereumConnection
 from src.connections.debridge_connection import DebridgeConnection
+from src.connections.beets_connection import BeetsConnection
 
 logger = logging.getLogger("connection_manager")
 
@@ -81,6 +82,8 @@ class ConnectionManager:
             return EthereumConnection
         elif class_name == "debridge":
             return DebridgeConnection
+        elif class_name == "beets":
+            return BeetsConnection
         return None
 
     def _register_connection(self, config_dic: Dict[str, Any]) -> None:

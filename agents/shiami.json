@@ -46,10 +46,13 @@
       "model": "gemini-1.5-flash",
       "tavily": true,
       "max_tavily_results": 3,
-      "plugins": ["sonic", "image", "silo", "debridge"]
+      "plugins": ["sonic", "image", "silo", "debridge", "beets"]
     },
     {
       "name": "debridge"
+    },
+    {
+      "name": "beets"
     },
     {
       "name": "browser_use",
