@@ -5,6 +5,13 @@ import traceback
 from requests.exceptions import RequestException, Timeout, ConnectionError
 from typing import Optional, Dict, Any, List, Union
 
+"""
+TODO:
+1. Swap seems good enough. Just need to format it according to the frontend.
+2. Add Liquidity - Fetch PoolId. Fetch token addresses.
+3. Remove Liquidity - Fetch PoolId. Fetch token addresses.
+"""
+
 logger = logging.getLogger("tools.beets_tools")
 
 class BeetsSwapTool(BaseTool):
