@@ -567,62 +567,90 @@ class BeetsTokenQueryTool(BaseTool):
             logger.debug(traceback.format_exc())
             return json.dumps({"error": str(e), "status": "error"})
 
-class BeetsPoolQueryTool(BaseTool):
-    name: str = "beets_pool_query"
+class BeetsPoolsQueryTool(BaseTool):
+    name: str = "beets_pools_query"
     description: str = """
-    beets_pool_query: Get pool information from Beets
+    beets_pools_query: Get and filter pools from Beets
     
     Natural language examples:
-    - "Find information about pool 0x1234...abcd on Beets"
-    - "What are the recent events for my address 0xUser... on Beets pools?"
-    - "Show me the first 5 pool events for user 0xUser... on Beets"
+    - "Show me all Beets pools". Input = {}
+    - "List the top 5 Beets pools sorted by APR". Input = {"first": 5, "orderBy": "apr", "orderDirection": "desc"}
+    - "Find the highest liquidity pools on Beets". Input = {"orderBy": "totalLiquidity", "orderDirection": "desc"}
+    - "Search for 'ETH' pools on Beets". Input = {"textSearch": "ETH"}
+    - "Get pools for user 0x123... on Beets". Input = {"userAddress": "0x123..."}
+    - Tell me some USDC pools on Beets. Input = {"textSearch": "USDC"}
     
-    Input should be a JSON string with one of the following:
-    - poolId: Pool ID for specific pool information (or)
-    - userAddress: User address for pool events, with optional 'first' and 'skip' parameters
+    Input should be a JSON string with optional parameters:
+    - userAddress: User's wallet address to get user-specific data
+    - first: Maximum number of pools to return
+    - orderBy: Field to sort by - options: "apr", "fees24h", "totalLiquidity", "volume24h", "totalShares", "userBalanceUsd"
+    - orderDirection: Sort direction - options: "asc", "desc"
+    - skip: Number of pools to skip (for pagination)
+    - textSearch: Text to search for in pool name/symbol
     
     Examples:
-    {"poolId": "0x1234...abcd"} 
-    {"userAddress": "0xUser...", "first": 10, "skip": 0}
+    {"first": 10, "orderBy": "apr", "orderDirection": "desc"}
+    {"textSearch": "ETH", "first": 5}
+    {"userAddress": "0xUser...", "orderBy": "userBalanceUsd", "orderDirection": "desc"}
     """
 
     def __init__(self, agent):
         super().__init__()
         self._agent = agent
 
-    def _run(self, poolId: str = None, userAddress: str = None, first: int = None, skip: int = None) -> str:
+    def _run(self, userAddress: str = None, first: int = None, orderBy: str = None, 
+             orderDirection: str = None, skip: int = None, textSearch: str = None) -> str:
         try:
-            logger.info(f"Pool query with poolId: {poolId}, userAddress: {userAddress}")
+            # Build log message based on provided parameters
+            log_parts = ["Querying Beets pools"]
+            if userAddress:
+                log_parts.append(f"for user {userAddress}")
+            if textSearch:
+                log_parts.append(f"with search term '{textSearch}'")
+            if orderBy:
+                direction = orderDirection or "desc"
+                log_parts.append(f"ordered by {orderBy} {direction}")
+            if first:
+                log_parts.append(f"limit {first}")
+            if skip:
+                log_parts.append(f"skipping {skip}")
+                
+            logger.info(" ".join(log_parts))
             
             # Check if beets connection exists
             if "beets" not in self._agent.connection_manager.connections:
                 return json.dumps({"error": "Beets connection not configured", "status": "error"})
             
-            if poolId is not None:
-                logger.info(f"Getting pool information for ID: {poolId}")
-                response = self._agent.connection_manager.connections["beets"].get_pool_by_id(poolId)
-                return json.dumps({
-                    "status": "success", 
-                    "data": response,
-                    "message": f"Found pool information for ID {poolId}"
-                })
-            elif userAddress is not None:
-                logger.info(f"Getting pool events for user: {userAddress} (first: {first}, skip: {skip})")
-                response = self._agent.connection_manager.connections["beets"].get_pool_events(
-                    userAddress=userAddress,
-                    first=first,
-                    skip=skip
-                )
-                return json.dumps({
-                    "status": "success", 
-                    "data": response,
-                    "message": f"Found pool events for user {userAddress}"
-                })
-            else:
-                return json.dumps({"error": "Either poolId or userAddress must be provided", "status": "error"})
+            # Call the get_pools method with provided parameters
+            response = self._agent.connection_manager.connections["beets"].get_pools(
+                userAddress=userAddress,
+                first=first,
+                orderBy=orderBy,
+                orderDirection=orderDirection,
+                skip=skip,
+                textSearch=textSearch
+            )
+            
+            # Count pools in response
+            pools_count = len(response.get("pools", [])) if isinstance(response, dict) and "pools" in response else 0
+            
+            return json.dumps({
+                "status": "success", 
+                "data": response,
+                "message": f"Found {pools_count} pools matching the criteria"
+            })
 
+        except RequestException as e:
+            logger.error(f"API request failed: {str(e)}")
+            return json.dumps({"error": f"API request failed: {str(e)}", "status": "error"})
+        except Timeout:
+            logger.error("Request timed out")
+            return json.dumps({"error": "Request timed out, please try again later", "status": "error"})
+        except ConnectionError:
+            logger.error("Connection error")
+            return json.dumps({"error": "Unable to connect to Beets service", "status": "error"})
         except Exception as e:
-            logger.error(f"Pool query failed: {str(e)}")
+            logger.error(f"Pools query failed: {str(e)}")
             logger.debug(traceback.format_exc())
             return json.dumps({"error": str(e), "status": "error"})
 
@@ -633,5 +661,5 @@ def get_beets_tools(agent) -> list:
         BeetsAddLiquidityTool(agent),
         BeetsRemoveLiquidityTool(agent),
         BeetsTokenQueryTool(agent),
-        BeetsPoolQueryTool(agent)
+        BeetsPoolsQueryTool(agent)
     ]

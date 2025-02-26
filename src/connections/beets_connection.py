@@ -267,6 +267,20 @@ class BeetsConnection(BaseConnection):
             ]
         )
 
+        # Add get_pools query action
+        self.actions['get_pools'] = Action(
+            name='get_pools',
+            description='Get all pools with optional filtering and sorting',
+            parameters=[
+                ActionParameter(name='userAddress', type=str, required=False, description='User wallet address'),
+                ActionParameter(name='first', type=int, required=False, description='Maximum number of pools to return'),
+                ActionParameter(name='orderBy', type=str, required=False, description='Field to sort by'),
+                ActionParameter(name='orderDirection', type=str, required=False, description='Sort direction (asc/desc)'),
+                ActionParameter(name='skip', type=int, required=False, description='Number of pools to skip'),
+                ActionParameter(name='textSearch', type=str, required=False, description='Text to search for in pool name/symbol')
+            ]
+        )
+
     def configure(self) -> bool:
         """Configure the Beets connection"""
         try:
@@ -848,6 +862,31 @@ class BeetsConnection(BaseConnection):
             return response.json()
         except Exception as e:
             raise BeetsConnectionError(f"Failed to get pool by ID: {str(e)}")
+        
+    
+    # Add get_pools method
+    def get_pools(self, userAddress: Optional[str] = None, first: Optional[int] = None, 
+                  orderBy: Optional[str] = None, orderDirection: Optional[str] = None, 
+                  skip: Optional[int] = None, textSearch: Optional[str] = None) -> Dict:
+        """Get all pools with optional filtering and sorting"""
+        try:
+            params = {
+                "userAddress": userAddress,
+                "first": first,
+                "orderBy": orderBy,
+                "orderDirection": orderDirection,
+                "skip": skip,
+                "textSearch": textSearch
+            }
+            
+            headers = self._get_headers()
+            response = requests.get(f"{self.api_base_url}/api/queries/pools", 
+                                  params=params, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Failed to get pools: {str(e)}")
+            raise BeetsConnectionError(f"Failed to get pools: {str(e)}")
     
     def swap(self, tokenIn: str, tokenOut: str, slippage: float = 0.005, userAddress: str = None, poolId: str = None) -> Dict:
         """Swap tokens using Beets"""
@@ -896,3 +935,4 @@ class BeetsConnection(BaseConnection):
 
         method = getattr(self, action_name)
         return method(**kwargs)
+
