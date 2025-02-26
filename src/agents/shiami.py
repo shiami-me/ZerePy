@@ -81,8 +81,4 @@ class Shiami:
             return PythonReplAgent
         elif class_name == "text":
             return TextAgent
-        elif class_name == "price_prediction":
-            return CryptoPredictionAgent
-        elif class_name == "rag_agent":
-            return RAGAgent
         return None

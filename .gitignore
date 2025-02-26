@@ -10,7 +10,7 @@ twitter_config.json
 
 # AGENTS
 agents/*.json
-
+src/agent/
 # Include example agent and general config
 !agents/example.json
 !agents/general.json
