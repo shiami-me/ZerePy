@@ -221,10 +221,8 @@ def portfolio_agent(portfolio: Dict[str, float]) -> None:
                     {context}
 
                     Provide a single, comprehensive response that includes:
-                    1. Current portfolio assessment
+                    1. Current portfolio allocation with assessment
                     2. Specific rebalancing recommendations with target percentages
-                    3. Risk assessment and mitigation strategies
-                    4. Clear action items
 
                     Be direct and conclusive."""
         
@@ -246,10 +244,11 @@ def portfolio_agent(portfolio: Dict[str, float]) -> None:
 
 if __name__ == "__main__":
     test_portfolio = {
-        'BTC': 0.5,
-        'ETH': 5.0,
+        'BTC': 100.0,
+        'ETH': 500.0,
         'SOL': 100.0,
-        'USDC': 5000.0
+        'USDC': 100.0,
+        
     }
     
     print("Generating portfolio advice...")
