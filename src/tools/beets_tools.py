@@ -618,6 +618,9 @@ class BeetsPoolsQueryTool(BaseTool):
         symbol
         protocolVersion
         type
+        userBalance {
+            totalBalanceUsd
+        }
         dynamicData {
             totalLiquidity
             volume24h
