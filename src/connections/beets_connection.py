@@ -339,6 +339,16 @@ class BeetsConnection(BaseConnection):
                                      json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
             
         except Exception as e:
             raise BeetsConnectionError(f"Failed to add boosted unbalanced liquidity to v3 pool: {str(e)}")
@@ -370,6 +380,16 @@ class BeetsConnection(BaseConnection):
                                      json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
             
         except Exception as e:
             raise BeetsConnectionError(f"Failed to add boosted proportional liquidity to v3 pool: {str(e)}")
@@ -403,6 +423,16 @@ class BeetsConnection(BaseConnection):
                                      json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
             
         except Exception as e:
             raise BeetsConnectionError(f"Failed to add unbalanced liquidity to v3 pool: {str(e)}")
@@ -432,6 +462,16 @@ class BeetsConnection(BaseConnection):
                                      json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
             
         except Exception as e:
             raise BeetsConnectionError(f"Failed to add proportional liquidity to v3 pool: {str(e)}")
@@ -464,6 +504,16 @@ class BeetsConnection(BaseConnection):
                                      json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
             
         except Exception as e:
             raise BeetsConnectionError(f"Failed to add single token liquidity to v3 pool: {str(e)}")
@@ -498,6 +548,16 @@ class BeetsConnection(BaseConnection):
                                      json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
             
         except Exception as e:
             raise BeetsConnectionError(f"Failed to add unbalanced liquidity to v2 pool: {str(e)}")
@@ -527,6 +587,16 @@ class BeetsConnection(BaseConnection):
                                      json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
             
         except Exception as e:
             raise BeetsConnectionError(f"Failed to add proportional liquidity to v2 pool: {str(e)}")
@@ -558,6 +628,16 @@ class BeetsConnection(BaseConnection):
                                      json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
             
         except Exception as e:
             raise BeetsConnectionError(f"Failed to add single token liquidity to v2 pool: {str(e)}")
@@ -588,6 +668,16 @@ class BeetsConnection(BaseConnection):
                                      json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
             
         except Exception as e:
             raise BeetsConnectionError(f"Failed to remove exact out liquidity from v3 pool: {str(e)}")
@@ -619,6 +709,16 @@ class BeetsConnection(BaseConnection):
                                      json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
             
         except Exception as e:
             raise BeetsConnectionError(f"Failed to remove exact in liquidity from v3 pool: {str(e)}")
@@ -649,6 +749,16 @@ class BeetsConnection(BaseConnection):
                                      json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
             
         except Exception as e:
             raise BeetsConnectionError(f"Failed to remove proportional liquidity from v3 pool: {str(e)}")
@@ -680,6 +790,16 @@ class BeetsConnection(BaseConnection):
                                      json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
             
         except Exception as e:
             raise BeetsConnectionError(f"Failed to remove boosted proportional liquidity from v3 pool: {str(e)}")
@@ -710,6 +830,16 @@ class BeetsConnection(BaseConnection):
                                      json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
             
         except Exception as e:
             raise BeetsConnectionError(f"Failed to remove exact out liquidity from v2 pool: {str(e)}")
@@ -741,6 +871,16 @@ class BeetsConnection(BaseConnection):
                                      json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
             
         except Exception as e:
             raise BeetsConnectionError(f"Failed to remove exact in liquidity from v2 pool: {str(e)}")
@@ -771,6 +911,16 @@ class BeetsConnection(BaseConnection):
                                      json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
             
         except Exception as e:
             raise BeetsConnectionError(f"Failed to remove proportional liquidity from v2 pool: {str(e)}")
@@ -805,6 +955,16 @@ class BeetsConnection(BaseConnection):
                                      json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
             
         except Exception as e:
             raise BeetsConnectionError(f"Failed to remove unbalanced liquidity from v2 pool: {str(e)}")
@@ -819,6 +979,16 @@ class BeetsConnection(BaseConnection):
             response.raise_for_status()
             logger.info(response)
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
         except Exception as e:
             logger.info(str(e))
             raise BeetsConnectionError(f"Failed to get token by symbol: {str(e)}")
@@ -831,6 +1001,16 @@ class BeetsConnection(BaseConnection):
                                    headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
         except Exception as e:
             raise BeetsConnectionError(f"Failed to get token by address: {str(e)}")
     
@@ -849,6 +1029,16 @@ class BeetsConnection(BaseConnection):
                                    params=params, headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
         except Exception as e:
             raise BeetsConnectionError(f"Failed to get pool events: {str(e)}")
     
@@ -860,6 +1050,16 @@ class BeetsConnection(BaseConnection):
                                    headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
         except Exception as e:
             raise BeetsConnectionError(f"Failed to get pool by ID: {str(e)}")
         
@@ -884,11 +1084,21 @@ class BeetsConnection(BaseConnection):
                                   params=params, headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
         except Exception as e:
             logger.error(f"Failed to get pools: {str(e)}")
             raise BeetsConnectionError(f"Failed to get pools: {str(e)}")
     
-    def swap(self, tokenIn: str, tokenOut: str, slippage: float = 0.005, userAddress: str = None, poolId: str = None) -> Dict:
+    def swap(self, tokenIn: str, tokenOut: str, slippage: float = 0.005, userAddress: str = None) -> Dict:
         """Swap tokens using Beets"""
         try:
             payload = {
@@ -898,15 +1108,21 @@ class BeetsConnection(BaseConnection):
                 "slippage": str(slippage)
             }
             
-            # Add pool ID if provided
-            if poolId:
-                payload["poolId"] = poolId
-            
             headers = self._get_headers()
             response = requests.post(f"{self.api_base_url}/api/swap", 
                                      json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()  # Extract JSON error message
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text  # Fallback to raw response text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+
             
         except Exception as e:
             raise BeetsConnectionError(f"Failed to swap tokens: {str(e)}")
