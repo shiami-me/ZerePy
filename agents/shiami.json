@@ -49,7 +49,8 @@
       "plugins": ["sonic", "image", "silo", "debridge", "beets", "tx"]
     },
     {
-      "name": "tx"
+      "name": "tx",
+      "network": "anvil"
     },
     {
       "name": "debridge"
