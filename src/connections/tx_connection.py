@@ -72,7 +72,7 @@ class TxConnection(BaseConnection):
         return True
 
     def get_tx_list(self, address: str, startblock: int = 0, endblock: int = 99999999, 
-                  page: int = 1, offset: int = 10, sort: str = "desc") -> Dict:
+                  page: int = 1, offset: int = 10, sort: str = "asc") -> Dict:
         """
         Get a list of normal transactions by address
         """
@@ -111,11 +111,11 @@ class TxConnection(BaseConnection):
             logger.error(f"Failed to get transaction list: {str(e)}")
             raise TxConnectionError(f"Failed to get transaction list: {str(e)}")
 
-    def perform_action(self, action_name: str, **kwargs) -> Any:
+    def perform_action(self, action_name: str, kwargs) -> Any:
         """Execute a transaction action with validation"""
         if action_name not in self.actions:
             raise KeyError(f"Unknown action: {action_name}")
-
+        logger.info(kwargs)
         if not self.is_configured(verbose=True):
             raise TxConnectionError("Transaction service is not properly configured")
 
