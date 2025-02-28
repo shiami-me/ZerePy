@@ -98,7 +98,7 @@ class ConnectionManager:
         try:
             name = config_dic["name"]
             connection_class = self._class_name_to_type(name)
-            if name == "groq" or name == "gemini":
+            if name == "groq" or name == "gemini" or name == "openai":
                 connection = connection_class(config_dic, agent = self.agent)
             else:
                 connection = connection_class(config_dic)
