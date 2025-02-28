@@ -281,6 +281,41 @@ class BeetsConnection(BaseConnection):
             ]
         )
 
+        # Add staking actions
+        self.actions['stake_deposit'] = Action(
+            name='stake_deposit',
+            description='Stake SONIC tokens',
+            parameters=[
+                ActionParameter(name='amount', type=str, required=True, description='Amount of SONIC to stake'),
+                ActionParameter(name='userAddress', type=str, required=True, description='User wallet address')
+            ]
+        )
+        
+        self.actions['stake_undelegate'] = Action(
+            name='stake_undelegate',
+            description='Undelegate staked SONIC shares from the pool',
+            parameters=[
+                ActionParameter(name='amountShares', type=str, required=True, description='Amount of shares to undelegate'),
+                ActionParameter(name='userAddress', type=str, required=True, description='User wallet address')
+            ]
+        )
+        
+        self.actions['stake_withdraw'] = Action(
+            name='stake_withdraw',
+            description='Withdraw undelegated SONIC tokens',
+            parameters=[
+                ActionParameter(name='withdrawId', type=str, required=True, description='ID of the withdrawal request')
+            ]
+        )
+        
+        self.actions['get_staking_info'] = Action(
+            name='get_staking_info',
+            description='Get staking information for a user',
+            parameters=[
+                ActionParameter(name='userAddress', type=str, required=True, description='User wallet address')
+            ]
+        )
+
     def configure(self) -> bool:
         """Configure the Beets connection"""
         try:
@@ -1126,6 +1161,101 @@ class BeetsConnection(BaseConnection):
             
         except Exception as e:
             raise BeetsConnectionError(f"Failed to swap tokens: {str(e)}")
+
+
+    def stake_deposit(self, amount: str, userAddress: str) -> Dict:
+        """Stake SONIC tokens"""
+        try:
+            payload = {
+                "amount": amount,
+                "userAddress": userAddress
+            }
+            
+            headers = self._get_headers()
+            response = requests.post(f"{self.api_base_url}/api/stake/deposit", 
+                                    json=payload, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+        except Exception as e:
+            raise BeetsConnectionError(f"Failed to stake SONIC tokens: {str(e)}")
+
+    def stake_undelegate(self, amountShares: str, userAddress: str) -> Dict:
+        """Undelegate staked SONIC shares from the pool"""
+        try:
+            payload = {
+                "amountShares": amountShares,
+                "userAddress": userAddress
+            }
+            
+            headers = self._get_headers()
+            response = requests.post(f"{self.api_base_url}/api/stake/undelegate", 
+                                    json=payload, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+        except Exception as e:
+            raise BeetsConnectionError(f"Failed to undelegate SONIC shares: {str(e)}")
+
+    def stake_withdraw(self, withdrawId: str) -> Dict:
+        """Withdraw undelegated SONIC tokens"""
+        try:
+            payload = {
+                "withdrawId": withdrawId
+            }
+            
+            headers = self._get_headers()
+            response = requests.post(f"{self.api_base_url}/api/stake/withdraw", 
+                                    json=payload, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+        except Exception as e:
+            raise BeetsConnectionError(f"Failed to withdraw SONIC tokens: {str(e)}")
+
+    def get_staking_info(self, userAddress: str) -> Dict:
+        """Get staking information for a user"""
+        try:
+            headers = self._get_headers()
+            response = requests.get(f"{self.api_base_url}/api/queries/stake/{userAddress}", 
+                                headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as http_err:
+            try:
+                error_details = response.json()
+                error_message = error_details.get("error", "Unknown error")
+            except ValueError:
+                error_message = response.text
+
+            logger.error(f"HTTP error: {http_err} | Response: {error_message}")
+            raise BeetsConnectionError(f"HTTP error: {http_err} | Response: {error_message}")
+        except Exception as e:
+            raise BeetsConnectionError(f"Failed to get staking info: {str(e)}")
 
     def _get_headers(self) -> Dict[str, str]:
         """Get request headers"""

@@ -703,6 +703,254 @@ class BeetsPoolsQueryTool(BaseTool):
             logger.debug(traceback.format_exc())
             return json.dumps({"error": str(e), "status": "error"})
 
+class BeetsStakeDepositTool(BaseTool):
+    name: str = "beets_stake_deposit"
+    description: str = """
+    beets_stake_deposit: Stake SONIC tokens on Beets
+    
+    Natural language examples:
+    - "Stake 100 SONIC tokens"
+    - "Deposit 50 SONIC to staking"
+    - "I want to stake SONIC"
+    
+    Input should be a JSON string with:
+    - amount: Amount of SONIC to stake (required)
+    - userAddress: User wallet address - Connected Wallet (required)
+    
+    Example: {"amount": "10", "userAddress": "0xUser.."}
+    """
+
+    def __init__(self, agent):
+        super().__init__()
+        self._agent = agent
+
+    def _run(self, amount: str, userAddress: str) -> str:
+        try:
+            logger.info(f"Staking {amount} SONIC tokens")
+            
+            # Validate inputs
+            if not amount:
+                return json.dumps({"error": "Amount cannot be empty", "status": "error"})
+    
+            if not userAddress:
+                return json.dumps({"error": "User address cannot be empty", "status": "error"})
+            
+            # Check if beets connection exists
+            if "beets" not in self._agent.connection_manager.connections:
+                return json.dumps({"error": "Beets connection not configured", "status": "error"})
+            amount = str(int(float(amount)*(10**18)))
+            # Execute the stake deposit
+            response = self._agent.connection_manager.connections["beets"].stake_deposit(amount, userAddress)
+            
+            logger.info(f"Stake deposit response: {response}")
+            if not response:
+                return json.dumps({"error": "Failed to stake SONIC tokens", "status": "error"})
+            response["transaction"]["type"] = "stake"
+            return json.dumps(response["transaction"])
+
+        except RequestException as e:
+            logger.error(f"API request failed: {str(e)}")
+            return json.dumps({"error": f"API request failed: {str(e)}", "status": "error"})
+        except Timeout:
+            logger.error("Request timed out")
+            return json.dumps({"error": "Request timed out, please try again later", "status": "error"})
+        except ConnectionError:
+            logger.error("Connection error")
+            return json.dumps({"error": "Unable to connect to Beets service", "status": "error"})
+        except KeyError as e:
+            logger.error(f"Missing key in response: {str(e)}")
+            return json.dumps({"error": f"Invalid response format: {str(e)}", "status": "error"})
+        except Exception as e:
+            logger.error(f"Stake deposit failed: {str(e)}")
+            logger.debug(traceback.format_exc())
+            return json.dumps({"error": str(e), "status": "error"})
+
+
+class BeetsStakeUndelegateTool(BaseTool):
+    name: str = "beets_stake_undelegate"
+    description: str = """
+    beets_stake_undelegate: Undelegate staked SONIC(stS) shares from the pool
+    
+    Natural language examples:
+    - "Undelegate 50 SONIC shares"
+    - "Start the withdrawal process for my staked SONIC"
+    - "I want to undelegate my SONIC stake"
+    
+    Input should be a JSON string with:
+    - amountShares: Amount of shares to undelegate (required)
+    - userAddress: User wallet address (required)
+    
+    Example: {"amountShares": "5", "userAddress": "0xUser.."}
+    """
+
+    def __init__(self, agent):
+        super().__init__()
+        self._agent = agent
+
+    def _run(self, amountShares: str, userAddress: str) -> str:
+        try:
+            logger.info(f"Undelegating {amountShares} SONIC shares")
+            
+            # Validate inputs
+            if not amountShares:
+                return json.dumps({"error": "Amount shares cannot be empty", "status": "error"})
+    
+            if not userAddress:
+                return json.dumps({"error": "User address cannot be empty", "status": "error"})
+            
+            # Check if beets connection exists
+            if "beets" not in self._agent.connection_manager.connections:
+                return json.dumps({"error": "Beets connection not configured", "status": "error"})
+            amountShares = str(int(float(amountShares)*(10**18)))
+            
+            # Execute the undelegate
+            response = self._agent.connection_manager.connections["beets"].stake_undelegate(amountShares, userAddress)
+            
+            logger.info(f"Stake undelegate response: {response}")
+            if not response:
+                return json.dumps({"error": "Failed to undelegate SONIC shares", "status": "error"})
+            response["transaction"]["type"] = "undelegate"
+            return json.dumps(response["transaction"])
+
+        except RequestException as e:
+            logger.error(f"API request failed: {str(e)}")
+            return json.dumps({"error": f"API request failed: {str(e)}", "status": "error"})
+        except Timeout:
+            logger.error("Request timed out")
+            return json.dumps({"error": "Request timed out, please try again later", "status": "error"})
+        except ConnectionError:
+            logger.error("Connection error")
+            return json.dumps({"error": "Unable to connect to Beets service", "status": "error"})
+        except KeyError as e:
+            logger.error(f"Missing key in response: {str(e)}")
+            return json.dumps({"error": f"Invalid response format: {str(e)}", "status": "error"})
+        except Exception as e:
+            logger.error(f"Stake undelegate failed: {str(e)}")
+            logger.debug(traceback.format_exc())
+            return json.dumps({"error": str(e), "status": "error"})
+
+
+class BeetsStakeWithdrawTool(BaseTool):
+    name: str = "beets_stake_withdraw"
+    description: str = """
+    beets_stake_withdraw: Withdraw undelegated SONIC tokens
+    
+    Natural language examples:
+    - "Withdraw my undelegated SONIC tokens"
+    - "Complete the withdrawal for my SONIC tokens"
+    - "I want to finalize my SONIC withdrawal with ID 123"
+    
+    Input should be a JSON string with:
+    - withdrawId: ID of the withdrawal request (required)
+    
+    Example: {"withdrawId": "123"}
+    """
+
+    def __init__(self, agent):
+        super().__init__()
+        self._agent = agent
+
+    def _run(self, withdrawId: str) -> str:
+        try:
+            logger.info(f"Withdrawing SONIC tokens with withdrawal ID {withdrawId}")
+            
+            # Validate inputs
+            if not withdrawId:
+                return json.dumps({"error": "Withdrawal ID cannot be empty", "status": "error"})
+            
+            # Check if beets connection exists
+            if "beets" not in self._agent.connection_manager.connections:
+                return json.dumps({"error": "Beets connection not configured", "status": "error"})
+            
+            # Execute the withdrawal
+            response = self._agent.connection_manager.connections["beets"].stake_withdraw(withdrawId)
+            
+            logger.info(f"Stake withdraw response: {response}")
+            if not response:
+                return json.dumps({"error": "Failed to withdraw SONIC tokens", "status": "error"})
+            response["transaction"]["type"] = "withdraw_stake"
+            return json.dumps(response["transaction"])
+
+        except RequestException as e:
+            logger.error(f"API request failed: {str(e)}")
+            return json.dumps({"error": f"API request failed: {str(e)}", "status": "error"})
+        except Timeout:
+            logger.error("Request timed out")
+            return json.dumps({"error": "Request timed out, please try again later", "status": "error"})
+        except ConnectionError:
+            logger.error("Connection error")
+            return json.dumps({"error": "Unable to connect to Beets service", "status": "error"})
+        except KeyError as e:
+            logger.error(f"Missing key in response: {str(e)}")
+            return json.dumps({"error": f"Invalid response format: {str(e)}", "status": "error"})
+        except Exception as e:
+            logger.error(f"Stake withdraw failed: {str(e)}")
+            logger.debug(traceback.format_exc())
+            return json.dumps({"error": str(e), "status": "error"})
+
+
+class BeetsStakingInfoTool(BaseTool):
+    name: str = "beets_staking_info"
+    description: str = """
+    beets_staking_info: Get staking information for a user
+    
+    Natural language examples:
+    - "Show my SONIC staking information"
+    - "Check my staked SONIC balance"
+    - "Get details about my SONIC staking position"
+    
+    Input should be a JSON string with:
+    - userAddress: User wallet address (required)
+    
+    Example: {"userAddress": "0xUser.."}
+    """
+
+    def __init__(self, agent):
+        super().__init__()
+        self._agent = agent
+
+    def _run(self, userAddress: str) -> str:
+        try:
+            logger.info(f"Getting staking information for user {userAddress}")
+            
+            # Validate inputs
+            if not userAddress:
+                return json.dumps({"error": "User address cannot be empty", "status": "error"})
+            
+            # Check if beets connection exists
+            if "beets" not in self._agent.connection_manager.connections:
+                return json.dumps({"error": "Beets connection not configured", "status": "error"})
+            
+            # Get staking information
+            response = self._agent.connection_manager.connections["beets"].get_staking_info(userAddress)
+            
+            logger.info(f"Staking info response: {response}")
+            if not response:
+                return json.dumps({"error": "Failed to get staking information", "status": "error"})
+
+            return json.dumps({
+                "status": "success",
+                "data": response,
+                "message": f"Retrieved staking information for {userAddress}"
+            })
+
+        except RequestException as e:
+            logger.error(f"API request failed: {str(e)}")
+            return json.dumps({"error": f"API request failed: {str(e)}", "status": "error"})
+        except Timeout:
+            logger.error("Request timed out")
+            return json.dumps({"error": "Request timed out, please try again later", "status": "error"})
+        except ConnectionError:
+            logger.error("Connection error")
+            return json.dumps({"error": "Unable to connect to Beets service", "status": "error"})
+        except KeyError as e:
+            logger.error(f"Missing key in response: {str(e)}")
+            return json.dumps({"error": f"Invalid response format: {str(e)}", "status": "error"})
+        except Exception as e:
+            logger.error(f"Getting staking info failed: {str(e)}")
+            logger.debug(traceback.format_exc())
+            return json.dumps({"error": str(e), "status": "error"})
+
 def get_beets_tools(agent) -> list:
     """Return a list of all Beets-related tools."""
     return [
@@ -710,5 +958,9 @@ def get_beets_tools(agent) -> list:
         BeetsAddLiquidityTool(agent),
         # BeetsRemoveLiquidityTool(agent),
         BeetsTokenQueryTool(agent),
-        BeetsPoolsQueryTool(agent)
+        BeetsPoolsQueryTool(agent),
+        BeetsStakeDepositTool(agent),
+        BeetsStakeUndelegateTool(agent),
+        BeetsStakeWithdrawTool(agent),
+        BeetsStakingInfoTool(agent)
     ]
