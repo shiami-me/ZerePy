@@ -746,6 +746,7 @@ class BeetsStakeDepositTool(BaseTool):
             if not response:
                 return json.dumps({"error": "Failed to stake SONIC tokens", "status": "error"})
             response["transaction"]["type"] = "stake"
+            response["transaction"]["chainId"] = 146
             return json.dumps(response["transaction"])
 
         except RequestException as e:
@@ -810,6 +811,7 @@ class BeetsStakeUndelegateTool(BaseTool):
             if not response:
                 return json.dumps({"error": "Failed to undelegate SONIC shares", "status": "error"})
             response["transaction"]["type"] = "undelegate"
+            response["transaction"]["chainId"] = 146
             return json.dumps(response["transaction"])
 
         except RequestException as e:
@@ -869,6 +871,7 @@ class BeetsStakeWithdrawTool(BaseTool):
             if not response:
                 return json.dumps({"error": "Failed to withdraw SONIC tokens", "status": "error"})
             response["transaction"]["type"] = "withdraw_stake"
+            response["transaction"]["chainId"] = 146
             return json.dumps(response["transaction"])
 
         except RequestException as e:
