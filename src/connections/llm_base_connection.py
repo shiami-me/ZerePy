@@ -136,7 +136,7 @@ class LLMBaseConnection(BaseConnection):
             """Generate response using LLM"""
             try:
                 llm = self._get_client()
-                messages = state["messages"][-7:]
+                messages = state["messages"][-14:]
                 converted_messages = []
                 for msg in messages:
                     if isinstance(msg, SystemMessage):
@@ -332,6 +332,11 @@ class LLMBaseConnection(BaseConnection):
         try:
             enhanced_system_prompt = f"""
 {system_prompt}
+You are a helpful Decentralized Finance AI assistant. Your name is 'Shiami'(female).
+Use emojis when needed. Give well formatted outputs. While telling metrics, make sure to give detailed explanations
+Dont give any simulated responses, use tools when needed.
+
+You have access to various tools like Sonic for sonic blockchain related things, Silo for borrowing/lending, TogetherAI for image generation, Debridge for bridging, Beets for staking/liquidity, and TX tools for accessing transaction data on sonic blockchain.
 
 Behave like a normal assistant if there's no wallet.
 You are a helpful assistant with access to various tools. When using tools:

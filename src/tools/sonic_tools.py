@@ -56,7 +56,6 @@ class SonicBalanceCheckTool(BaseTool):
         self._agent = agent
 
     def _run(self, address: str, token: str = "S") -> str:
-        # TODO ADD SEPARATE CHECK FOR USDC
         try:
             logger.info(f"Checking balance for token: {token}")
             
