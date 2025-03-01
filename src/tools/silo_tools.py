@@ -147,7 +147,7 @@ class SiloDepositTool(BaseTool):
                 token_0 = "wS"
                 balance = json.loads(SonicBalanceCheckTool(self._agent)._run(sender, token_0))
                 if float(balance["balance"]) < amount:
-                    return f"Insufficient balance: {balance['balance']} wS. Silo accepts only wrapped Sonic tokens. Would you like me to wrap some?"
+                    return {"error": f"Insufficient balance: {balance['balance']} wS. Silo accepts only wrapped Sonic tokens. Would you like me to wrap some?"}
             result = self._agent.connection_manager.connections["silo"].deposit(
                 silo_address=silo_address,
                 amount=amount,
@@ -227,7 +227,7 @@ class SiloRepayTool(BaseTool):
                 token_0 = "wS"
                 balance = json.loads(SonicBalanceCheckTool(self._agent)._run(sender, token_0))
                 if float(balance["balance"]) < amount:
-                    return f"Insufficient balance: {balance['balance']} wS. Silo accepts only wrapped Sonic tokens. Would you like me to wrap some?"
+                    return {"error": f"Insufficient balance: {balance['balance']} wS. Silo accepts only wrapped Sonic tokens. Would you like me to wrap some?"}
             result = self._agent.connection_manager.connections["silo"].repay(
                 silo_address=silo_address,
                 amount=amount,
