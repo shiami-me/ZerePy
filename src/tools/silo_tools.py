@@ -157,6 +157,7 @@ class SiloDepositTool(BaseTool):
             )
             result["type"] = "deposit"
             result["tokenAddress"] = token_address
+            result["status"] = "Initiated. Continue in the frontend."
             return result
         except Exception as e:
             return f"Error depositing tokens: {str(e)}"
@@ -195,6 +196,7 @@ class SiloBorrowTool(BaseTool):
             )
             result["type"] = "borrow"
             result["tokenAddress"] = token_address
+            result["status"] = "Initiated. Continue in the frontend."
             return result
         except Exception as e:
             return f"Error borrowing tokens: {str(e)}"
@@ -236,6 +238,7 @@ class SiloRepayTool(BaseTool):
             )
             result["type"] = "repay"
             result["tokenAddress"] = token_address
+            result["status"] = "Initiated. Continue in the frontend."
             return result
         except Exception as e:
             return f"Error repaying tokens: {str(e)}"
@@ -277,6 +280,7 @@ class SiloWithdrawTool(BaseTool):
             )
             result["type"] = "withdraw"
             result["tokenAddress"] = token_address
+            result["status"] = "Initiated. Continue in the frontend."
             return result
         except Exception as e:
             return f"Error withdrawing tokens: {str(e)}"

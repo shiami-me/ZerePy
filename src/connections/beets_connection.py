@@ -45,8 +45,8 @@ class BeetsConnection(BaseConnection):
             ]
         )
         
-        self.actions['add-boosted-proportional-liquidity-v3'] = Action(
-            name='add-boosted-proportional-liquidity-v3',
+        self.actions['add_boosted_proportional_liquidity_v3'] = Action(
+            name='add_boosted_proportional_liquidity_v3',
             description='Add boosted proportional liquidity to a v3 pool',
             parameters=[
                 ActionParameter(name='referenceAmount', type=Dict, required=True, description='Reference amount for proportional join'),
@@ -57,8 +57,8 @@ class BeetsConnection(BaseConnection):
             ]
         )
         
-        self.actions['add-unbalanced-liquidity-v3'] = Action(
-            name='add-unbalanced-liquidity-v3',
+        self.actions['add_unbalanced_liquidity_v3'] = Action(
+            name='add_unbalanced_liquidity_v3',
             description='Add unbalanced liquidity to a v3 pool',
             parameters=[
                 ActionParameter(name='amountsIn', type=list, required=True, description='Array of token amounts to add'),
@@ -68,8 +68,8 @@ class BeetsConnection(BaseConnection):
             ]
         )
         
-        self.actions['add-proportional-liquidity-v3'] = Action(
-            name='add-proportional-liquidity-v3',
+        self.actions['add_proportional_liquidity_v3'] = Action(
+            name='add_proportional_liquidity_v3',
             description='Add proportional liquidity to a v3 pool',
             parameters=[
                 ActionParameter(name='referenceAmount', type=Dict, required=True, description='Reference amount for proportional join'),
@@ -79,11 +79,11 @@ class BeetsConnection(BaseConnection):
             ]
         )
         
-        self.actions['add-single-token-liquidity-v3'] = Action(
-            name='add-single-token-liquidity-v3',
+        self.actions['add_single_token_liquidity_v3'] = Action(
+            name='add_single_token_liquidity_v3',
             description='Add single token liquidity to a v3 pool',
             parameters=[
-                ActionParameter(name='bptOut', type=float, required=True, description='BPT tokens to receive'),
+                ActionParameter(name='bptOut', type=Dict, required=True, description='BPT tokens to receive'),
                 ActionParameter(name='tokenIn', type=str, required=True, description='Token address to add'),
                 ActionParameter(name='poolId', type=str, required=True, description='Pool ID'),
                 ActionParameter(name='slippage', type=float, required=True, description='Slippage tolerance'),
@@ -92,8 +92,8 @@ class BeetsConnection(BaseConnection):
         )
         
         # Add Liquidity Actions (V2)
-        self.actions['add-unbalanced-liquidity-v2'] = Action(
-            name='add-unbalanced-liquidity-v2',
+        self.actions['add_unbalanced_liquidity_v2'] = Action(
+            name='add_unbalanced_liquidity_v2',
             description='Add unbalanced liquidity to a v2 pool',
             parameters=[
                 ActionParameter(name='amountsIn', type=list, required=True, description='Array of token amounts to add'),
@@ -103,8 +103,8 @@ class BeetsConnection(BaseConnection):
             ]
         )
         
-        self.actions['add-proportional-liquidity-v2'] = Action(
-            name='add-proportional-liquidity-v2',
+        self.actions['add_proportional_liquidity_v2'] = Action(
+            name='add_proportional_liquidity_v2',
             description='Add proportional liquidity to a v2 pool',
             parameters=[
                 ActionParameter(name='referenceAmount', type=Dict, required=True, description='Reference amount for proportional join'),
@@ -114,8 +114,8 @@ class BeetsConnection(BaseConnection):
             ]
         )
         
-        self.actions['add-single-token-liquidity-v2'] = Action(
-            name='add-single-token-liquidity-v2',
+        self.actions['add_single_token_liquidity_v2'] = Action(
+            name='add_single_token_liquidity_v2',
             description='Add single token liquidity to a v2 pool',
             parameters=[
                 ActionParameter(name='bptOut', type=float, required=True, description='BPT tokens to receive'),
@@ -127,22 +127,22 @@ class BeetsConnection(BaseConnection):
         )
         
         # Remove Liquidity Actions (V3)
-        self.actions['remove-single-token-exact-out-v3'] = Action(
-            name='remove-single-token-exact-out-v3',
+        self.actions['remove_single_token_exact_out_liquidity_v3'] = Action(
+            name='remove_single_token_exact_out_liquidity_v3',
             description='Remove liquidity from a v3 pool for exact token amount out',
             parameters=[
-                ActionParameter(name='amountOut', type=float, required=True, description='Token amount to receive'),
+                ActionParameter(name='amountOut', type=Dict, required=True, description='Token amount to receive'),
                 ActionParameter(name='poolId', type=str, required=True, description='Pool ID'),
                 ActionParameter(name='slippage', type=float, required=True, description='Slippage tolerance'),
                 ActionParameter(name='userAddress', type=str, required=True, description='User wallet address')
             ]
         )
         
-        self.actions['remove-single-token-exact-in-v3'] = Action(
-            name='remove-single-token-exact-in-v3',
+        self.actions['remove_single_token_exact_in_liquidity_v3'] = Action(
+            name='remove_single_token_exact_in_liquidity_v3',
             description='Remove exact BPT amount from a v3 pool',
             parameters=[
-                ActionParameter(name='bptIn', type=float, required=True, description='BPT tokens to remove'),
+                ActionParameter(name='bptIn', type=Dict, required=True, description='BPT tokens to remove'),
                 ActionParameter(name='tokenOut', type=str, required=True, description='Token address to receive'),
                 ActionParameter(name='poolId', type=str, required=True, description='Pool ID'),
                 ActionParameter(name='slippage', type=float, required=True, description='Slippage tolerance'),
@@ -150,11 +150,11 @@ class BeetsConnection(BaseConnection):
             ]
         )
         
-        self.actions['remove-proportional-liquidity-v3'] = Action(
-            name='remove-proportional-liquidity-v3',
+        self.actions['remove_proportional_liquidity_v3'] = Action(
+            name='remove_proportional_liquidity_v3',
             description='Remove proportional liquidity from a v3 pool',
             parameters=[
-                ActionParameter(name='bptIn', type=float, required=True, description='BPT tokens to remove'),
+                ActionParameter(name='bptIn', type=Dict, required=True, description='BPT tokens to remove'),
                 ActionParameter(name='poolId', type=str, required=True, description='Pool ID'),
                 ActionParameter(name='slippage', type=float, required=True, description='Slippage tolerance'),
                 ActionParameter(name='userAddress', type=str, required=True, description='User wallet address')
@@ -186,22 +186,22 @@ class BeetsConnection(BaseConnection):
         )
         
         # Remove Liquidity Actions (V2)
-        self.actions['remove-single-token-exact-out-v2'] = Action(
-            name='remove-single-token-exact-out-v2',
+        self.actions['remove_single_token_exact_out_liquidity_v2'] = Action(
+            name='remove_single_token_exact_out_liquidity_v2',
             description='Remove liquidity from a v2 pool for exact token amount out',
             parameters=[
-                ActionParameter(name='amountOut', type=float, required=True, description='Token amount to receive'),
+                ActionParameter(name='amountOut', type=Dict, required=True, description='Token amount to receive'),
                 ActionParameter(name='poolId', type=str, required=True, description='Pool ID'),
                 ActionParameter(name='slippage', type=float, required=True, description='Slippage tolerance'),
                 ActionParameter(name='userAddress', type=str, required=True, description='User wallet address')
             ]
         )
         
-        self.actions['remove-single-token-exact-in-v2'] = Action(
-            name='remove-single-token-exact-in-v2',
+        self.actions['remove_single_token_exact_in_liquidity_v2'] = Action(
+            name='remove_single_token_exact_in_liquidity_v2',
             description='Remove exact BPT amount from a v2 pool',
             parameters=[
-                ActionParameter(name='bptIn', type=float, required=True, description='BPT tokens to remove'),
+                ActionParameter(name='bptIn', type=Dict, required=True, description='BPT tokens to remove'),
                 ActionParameter(name='tokenOut', type=str, required=True, description='Token address to receive'),
                 ActionParameter(name='poolId', type=str, required=True, description='Pool ID'),
                 ActionParameter(name='slippage', type=float, required=True, description='Slippage tolerance'),
@@ -209,11 +209,11 @@ class BeetsConnection(BaseConnection):
             ]
         )
         
-        self.actions['remove-proportional-liquidity-v2'] = Action(
-            name='remove-proportional-liquidity-v2',
+        self.actions['remove_proportional_liquidity_v2'] = Action(
+            name='remove_proportional_liquidity_v2',
             description='Remove proportional liquidity from a v2 pool',
             parameters=[
-                ActionParameter(name='bptIn', type=float, required=True, description='BPT tokens to remove'),
+                ActionParameter(name='bptIn', type=Dict, required=True, description='BPT tokens to remove'),
                 ActionParameter(name='poolId', type=str, required=True, description='Pool ID'),
                 ActionParameter(name='slippage', type=float, required=True, description='Slippage tolerance'),
                 ActionParameter(name='userAddress', type=str, required=True, description='User wallet address')
@@ -678,7 +678,7 @@ class BeetsConnection(BaseConnection):
             raise BeetsConnectionError(f"Failed to add single token liquidity to v2 pool: {str(e)}")
     
     # Remove Liquidity Methods (V3)
-    def remove_single_token_exact_out_v3(self, amountOut: Dict, poolId: str, slippage: float, userAddress: str) -> Dict:
+    def remove_single_token_exact_out_liquidity_v3(self, amountOut: Dict, poolId: str, slippage: float, userAddress: str) -> Dict:
         """Remove liquidity from a v3 pool for exact token amount out"""
         try:
             # Format amountOut according to API expectations
@@ -717,7 +717,7 @@ class BeetsConnection(BaseConnection):
         except Exception as e:
             raise BeetsConnectionError(f"Failed to remove exact out liquidity from v3 pool: {str(e)}")
     
-    def remove_single_token_exact_in_v3(self, bptIn: Dict, tokenOut: str, poolId: str, slippage: float, userAddress: str) -> Dict:
+    def remove_single_token_exact_in_liquidity_v3(self, bptIn: Dict, tokenOut: str, poolId: str, slippage: float, userAddress: str) -> Dict:
         """Remove exact BPT amount from a v3 pool"""
         try:
             # Format bptIn according to API expectations
@@ -840,7 +840,7 @@ class BeetsConnection(BaseConnection):
             raise BeetsConnectionError(f"Failed to remove boosted proportional liquidity from v3 pool: {str(e)}")
     
     # Remove Liquidity Methods (V2)
-    def remove_single_token_exact_out_v2(self, amountOut: Dict, poolId: str, slippage: float, userAddress: str) -> Dict:
+    def remove_single_token_exact_out_liquidity_v2(self, amountOut: Dict, poolId: str, slippage: float, userAddress: str) -> Dict:
         """Remove liquidity from a v2 pool for exact token amount out"""
         try:
             # Format amountOut according to API expectations
@@ -879,7 +879,7 @@ class BeetsConnection(BaseConnection):
         except Exception as e:
             raise BeetsConnectionError(f"Failed to remove exact out liquidity from v2 pool: {str(e)}")
     
-    def remove_single_token_exact_in_v2(self, bptIn: Dict, tokenOut: str, poolId: str, slippage: float, userAddress: str) -> Dict:
+    def remove_single_token_exact_in_liquidity_v2(self, bptIn: Dict, tokenOut: str, poolId: str, slippage: float, userAddress: str) -> Dict:
         """Remove exact BPT amount from a v2 pool"""
         try:
             # Format bptIn according to API expectations

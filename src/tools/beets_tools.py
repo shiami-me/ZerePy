@@ -86,11 +86,11 @@ class BeetsSwapTool(BaseTool):
 class AddLiquidityInput(BaseModel):
     type: str = Field(..., description="Liquidity type: 'proportional', 'unbalanced', 'single-token', 'boosted-proportional', or 'boosted-unbalanced'")
     pool: str = Field(..., description="Name or address of the Beets pool")
-    slippage: float = Field(..., description="Slippage tolerance as a percentage (e.g., 0.5 for 0.5%)")
     userAddress: str = Field(..., description="User wallet address(connected wallet)")
     tokensIn: List[str] = Field(..., description="List of input token symbols")
-    amountsIn: List[float] = Field(..., description="List of input token amounts")
-    bptOutAmount: float = Field(..., description="Amount of BPT tokens to receive")
+    amountsIn: List[float] = Field([], description="List of input token amounts")
+    bptOutAmount: float = Field(0, description="Amount of BPT tokens to receive")
+    slippage: float = Field(0.5, description="Slippage tolerance as a percentage (e.g., 0.5 for 0.5%)")
 
 
 class BeetsAddLiquidityTool(BaseTool):
@@ -101,17 +101,17 @@ class BeetsAddLiquidityTool(BaseTool):
     Natural language examples:
     - "I want to add 100 USDC of proportional liquidity to Beets pool 'Conspiracy Concerto' with 0.5% slippage". Input = {"type": "proportional", "pool": "Conspiracy Concerto", "slippage": 0.5, "userAddress": "0xUser..", "tokensIn": ["USDC"], "amountsIn": [100]}
     - "Add unbalanced liquidity with 200 USDC and 0.5 ETH to Beets pool 'Conspiracy Concerto' with 1% slippage". Input = {"type": "unbalanced", "pool": "Conspiracy Concerto", "slippage": 1, "userAddress": "0xUser..", "tokensIn": ["USDC", "ETH"], "amountsIn": [200, 0.5]}
-    - "Provide 50 DAI single token liquidity to Beets pool 'Conspiracy Concerto' to get 10 BPT". Input = {"type": "single-token", "pool": "Conspiracy Concerto", "slippage": 0.5, "userAddress": "0xUser..", "tokensIn": ["DAI"], "bptOutAmount": 10}
+    - "Provide DAI single token liquidity to Beets pool 'Conspiracy Concerto' to get 10 BPT". Input = {"type": "single-token", "pool": "Conspiracy Concerto", "slippage": 0.5, "userAddress": "0xUser..", "tokensIn": ["DAI"], "bptOutAmount": 10}
     - "Add boosted proportional liquidity with 500 USDC amount to pool 'Conspiracy Concerto' using USDC and wETH tokens". Input = {"type": "boosted-proportional", "pool": "Conspiracy Concerto", "slippage": 0.5, "userAddress": "0xUser..", "tokensIn": ["USDC"], "amountsIn": [500]}
     
     Input should be a JSON string with:
-    - type: "proportional", "unbalanced", "single-token", "boosted-proportional", or "boosted-unbalanced" (required)
+    - type: "proportional", "unbalanced", "single-token", "boosted-proportional", or "boosted-unbalanced" (required). Default = "proportional"
     - pool: Pool Name (required)
-    - slippage: Slippage tolerance (required)
     - userAddress: User wallet address - Connected Wallet (required)
     - tokensIn: List of input token symbols (required)
-    - amountsIn: List of input token amounts (for every type except single-token)
-    - bptOutAmount: Amount of BPT tokens to receive (only for single-token)
+    - amountsIn: List of input token amounts (for every type except single-token. Not needed for single-token), Default = []
+    - bptOutAmount: Amount of BPT tokens to receive (only for 'single-token' type). Default = 0
+    - slippage: Slippage tolerance (required). Default = 0.5
 
     """
     
@@ -121,7 +121,7 @@ class BeetsAddLiquidityTool(BaseTool):
         super().__init__()
         self._agent = agent
 
-    def _run(self, type: str, pool: str, userAddress: str, tokensIn: List[str], amountsIn: Optional[List[float]], bptOutAmount: Optional[float], slippage: float = 1.0) -> str:
+    def _run(self, type: str, pool: str, userAddress: str, tokensIn: List[str], amountsIn: List[float] = [], bptOutAmount: float = 0, slippage: float = 1.0) -> str:
         try:
             logger.info(f"Adding {type} liquidity to pool {pool}")
             logger.info(f"Tokens in: {tokensIn}, amounts in: {amountsIn}, BPT out: {bptOutAmount}")
@@ -258,12 +258,9 @@ class BeetsAddLiquidityTool(BaseTool):
             logger.info(f"Add liquidity response: {response}")
             if not response:
                 return json.dumps({"error": "Failed to add liquidity", "status": "error"})
-
-            return json.dumps({
-                "status": "success", 
-                "transaction": response,
-                "message": f"Successfully added {type} liquidity to pool {poolId}"
-            })
+            
+            response["status"] = "Initiated. Continue in the frontend."
+            return json.dumps(response)
 
         except RequestException as e:
             logger.error(f"API request failed: {str(e)}")
@@ -286,12 +283,11 @@ class BeetsAddLiquidityTool(BaseTool):
 class RemoveLiquidityInput(BaseModel):
     type: str = Field(..., description="Liquidity removal type: 'proportional', 'single-token-exact-in', 'single-token-exact-out', 'unbalanced', or 'boosted-proportional'")
     pool: str = Field(..., description="Name or address of the Beets pool")
-    slippage: float = Field(..., description="Slippage tolerance as a percentage (e.g., 0.5 for 0.5%)")
+    slippage: float = Field(0.5, description="Slippage tolerance as a percentage (e.g., 0.5 for 0.5%)")
     userAddress: str = Field(..., description="User wallet address(connected wallet)")
-    bptAmount: Optional[float] = Field(None, description="Amount of BPT tokens to withdraw (for proportional, boosted-proportional, and single-token-exact-in)")
-    tokenOut: Optional[str] = Field(None, description="Token symbol or address to receive (for single-token types)")
-    amountOut: Optional[float] = Field(None, description="Amount of tokens to receive (for single-token-exact-out)")
-    amountsOut: Optional[List[Dict[str, Union[str, float]]]] = Field(None, description="List of token amounts to withdraw (for unbalanced)", items={"type": "object", "properties": {"token": {"type": "string"}, "amount": {"type": "number"}}})
+    bptAmount: float = Field(0, description="Amount of BPT tokens to withdraw (for proportional, boosted-proportional, and single-token-exact-in)")
+    tokensOut: List[str] = Field([], description="List of output tokens(for single-token types & unbalanced)")
+    amountsOut: List[float] = Field([], description="List of token amounts to withdraw (for unbalanced & single-token-exact-out)")
 
 
 class BeetsRemoveLiquidityTool(BaseTool):
@@ -301,28 +297,19 @@ class BeetsRemoveLiquidityTool(BaseTool):
     
     Natural language examples:
     - "I want to withdraw 10 BPT proportionally from Beets pool 'Conspiracy Concerto' with 0.5% slippage". Input = {"type": "proportional", "pool": "Conspiracy Concerto", "bptAmount": 10, "slippage": 0.5, "userAddress": "0xUser.."}
-    - "Remove 15 BPT from Beets pool 'Conspiracy Concerto' and get USDC in return". Input = {"type": "single-token-exact-in", "pool": "Conspiracy Concerto", "bptAmount": 15, "tokenOut": "USDC", "slippage": 0.5, "userAddress": "0xUser.."}
-    - "Take out exactly 500 USDC from my liquidity in Beets pool 'Conspiracy Concerto'". Input = {"type": "single-token-exact-out", "pool": "Conspiracy Concerto", "tokenOut": "USDC", "amountOut": 500, "slippage": 0.5, "userAddress": "0xUser.."}
-    - "Remove unbalanced liquidity from 'Conspiracy Concerto' to get specific amounts of tokens". Input = {"type": "unbalanced", "pool": "Conspiracy Concerto", "amountsOut": [{"token": "USDC", "amount": 100}, {"token": "ETH", "amount": 0.5}], "slippage": 0.5, "userAddress": "0xUser.."}
+    - "Remove 15 BPT from Beets pool 'Conspiracy Concerto' and get USDC in return". Input = {"type": "single-token-exact-in", "pool": "Conspiracy Concerto", "bptAmount": 15, "tokensOut": ["USDC"], "slippage": 0.5, "userAddress": "0xUser.."}
+    - "Take out exactly 500 USDC from my liquidity in Beets pool 'Conspiracy Concerto'". Input = {"type": "single-token-exact-out", "pool": "Conspiracy Concerto", "tokensOut": ["USDC"], "amountsOut": [500], "slippage": 0.5, "userAddress": "0xUser.."}
+    - "Remove unbalanced liquidity from 'Conspiracy Concerto' to get specific amounts of tokens". Input = {"type": "unbalanced", "pool": "Conspiracy Concerto", "tokensOut": ["USDC", "ETH"], "amountsOut": [100, 0.5], "slippage": 0.5, "userAddress": "0xUser.."}
     - "Withdraw 20 BPT with boosted proportional strategy from 'Conspiracy Concerto' pool". Input = {"type": "boosted-proportional", "pool": "Conspiracy Concerto", "bptAmount": 20, "slippage": 0.5, "userAddress": "0xUser.."}
     
     Input should be a JSON string with:
     - type: "proportional", "single-token-exact-in", "single-token-exact-out", "unbalanced", or "boosted-proportional" (required)
     - pool: Pool Name (required)
-    - slippage: Slippage tolerance (required)
+    - slippage: Slippage tolerance (required). Default = 0.5
     - userAddress: User wallet address - Connected Wallet (required)
-    
-    Additional parameters based on type:
-    - For proportional or boosted-proportional: 
-        bptAmount: Amount of BPT tokens to withdraw
-    - For single-token-exact-in: 
-        bptAmount: Amount of BPT tokens to remove
-        tokenOut: Token symbol to receive
-    - For single-token-exact-out: 
-        tokenOut: Token symbol to receive
-        amountOut: Amount of tokens to receive
-    - For unbalanced:
-        amountsOut: Array of {token: symbol, amount: value} objects
+    - bptAmount: Amount of BPT tokens to withdraw (for proportional, boosted-proportional, and single-token-exact-in)
+    - tokensOut: List of output tokens(for single-token types & unbalanced)
+    - amountsOut: List of token amounts to withdraw (for unbalanced & single-token-exact-out)
     """
     
     args_schema: Type[BaseModel] = RemoveLiquidityInput
@@ -331,12 +318,13 @@ class BeetsRemoveLiquidityTool(BaseTool):
         super().__init__()
         self._agent = agent
 
-    def _run(self, type: str, pool: str, slippage: float, userAddress: str, 
-             bptAmount: Optional[float] = None, tokenOut: Optional[str] = None, 
-             amountOut: Optional[float] = None, amountsOut: Optional[List[Dict[str, Union[str, float]]]] = None) -> str:
+    def _run(self, type: str, pool: str, userAddress: str, 
+             bptAmount: float = 0, tokensOut: List[str] = [], amountsOut: List[float] = [], slippage: float = 0.5) -> str:
         try:
             logger.info(f"Removing {type} liquidity from pool {pool}")
-            
+            logger.info(f"User address: {userAddress}")
+            logger.info(f"BPT amount: {bptAmount}, Tokens out: {tokensOut}, Amounts out: {amountsOut}")
+            logger.info(f"Slippage: {slippage}")
             # Validate common inputs
             if not pool:
                 return json.dumps({"error": "Pool cannot be empty", "status": "error"})
@@ -388,7 +376,7 @@ class BeetsRemoveLiquidityTool(BaseTool):
             
             # Handle type-specific parameters
             if type in ["proportional", "boosted-proportional"]:
-                if bptAmount is None:
+                if bptAmount <= 0:
                     return json.dumps({
                         "error": f"BPT amount is required for {type} withdrawal",
                         "status": "error"
@@ -397,17 +385,17 @@ class BeetsRemoveLiquidityTool(BaseTool):
                 # Format BPT amount for API
                 params["bptIn"] = {
                     "address": pool_data["address"],
-                    "amount": bptAmount,  # BPT tokens have 18 decimals
+                    "amount": bptAmount,
                     "decimals": 18
                 }
                 
             elif type == "single-token-exact-in":
-                if bptAmount is None:
+                if bptAmount <= 0:
                     return json.dumps({
                         "error": "BPT amount is required for single token exact in withdrawal",
                         "status": "error"
                     })
-                if not tokenOut:
+                if not tokensOut or len(tokensOut) == 0:
                     return json.dumps({
                         "error": "Token out symbol is required for single token withdrawal",
                         "status": "error"
@@ -415,10 +403,10 @@ class BeetsRemoveLiquidityTool(BaseTool):
                     
                 # Find the token in pool tokens
                 token_data = next((token for token in pool_data.get("poolTokens", []) 
-                                  if token["symbol"] == tokenOut), None)
+                                  if token["symbol"] == tokensOut[0]), None)
                 if not token_data:
                     return json.dumps({
-                        "error": f"Token '{tokenOut}' not found in pool",
+                        "error": f"Token '{tokensOut[0]}' not found in pool",
                         "status": "error"
                     })
                     
@@ -431,12 +419,12 @@ class BeetsRemoveLiquidityTool(BaseTool):
                 params["tokenOut"] = token_data["address"]
                 
             elif type == "single-token-exact-out":
-                if amountOut is None:
+                if len(amountsOut) == 0:
                     return json.dumps({
                         "error": "Amount out is required for single token exact out withdrawal",
                         "status": "error"
                     })
-                if not tokenOut:
+                if not tokensOut or len(tokensOut) == 0:
                     return json.dumps({
                         "error": "Token out symbol is required for single token withdrawal",
                         "status": "error"
@@ -444,38 +432,38 @@ class BeetsRemoveLiquidityTool(BaseTool):
                     
                 # Find the token in pool tokens
                 token_data = next((token for token in pool_data.get("poolTokens", []) 
-                                  if token["symbol"] == tokenOut), None)
+                                  if token["symbol"] == tokensOut[0]), None)
                 if not token_data:
                     return json.dumps({
-                        "error": f"Token '{tokenOut}' not found in pool",
+                        "error": f"Token '{tokensOut[0]}' not found in pool",
                         "status": "error"
                     })
                     
                 # Format amount out for API
                 params["amountOut"] = {
                     "address": token_data["address"],
-                    "amount": amountOut,
+                    "amount": amountsOut[0],
                     "decimals": token_data["decimals"]
                 }
                 
             elif type == "unbalanced":
-                if not amountsOut or not isinstance(amountsOut, list) or len(amountsOut) == 0:
+                if len(amountsOut) == 0 or len(tokensOut) == 0:
                     return json.dumps({
-                        "error": "Amounts list with at least one token is required for unbalanced withdrawal",
+                        "error": "Tokens list and amounts list are required for unbalanced withdrawal",
+                        "status": "error"
+                    })
+                    
+                if len(tokensOut) != len(amountsOut):
+                    return json.dumps({
+                        "error": "The number of tokens must match the number of amounts for unbalanced withdrawal",
                         "status": "error"
                     })
                     
                 # Format each amount in the list
                 formatted_amounts = []
-                for amount_entry in amountsOut:
-                    token_symbol = amount_entry.get("token")
-                    amount = amount_entry.get("amount")
-                    
-                    if not token_symbol or amount is None:
-                        return json.dumps({
-                            "error": "Each amount must contain 'token' and 'amount' fields",
-                            "status": "error"
-                        })
+                for i in range(len(tokensOut)):
+                    token_symbol = tokensOut[i]
+                    amount = amountsOut[i]
                         
                     # Find the token in pool tokens
                     token_data = next((token for token in pool_data.get("poolTokens", []) 
@@ -508,12 +496,8 @@ class BeetsRemoveLiquidityTool(BaseTool):
             logger.info(f"Remove liquidity response: {response}")
             if not response:
                 return json.dumps({"error": "Failed to remove liquidity", "status": "error"})
-
-            return json.dumps({
-                "status": "success", 
-                "transaction": response,
-                "message": f"Successfully removed {type} liquidity from pool {pool}"
-            })
+            response["status"] = "Initiated. Continue in the frontend."
+            return json.dumps(response)
 
         except RequestException as e:
             logger.error(f"API request failed: {str(e)}")
@@ -531,7 +515,6 @@ class BeetsRemoveLiquidityTool(BaseTool):
             logger.error(f"Remove liquidity failed: {str(e)}")
             logger.debug(traceback.format_exc())
             return json.dumps({"error": str(e), "status": "error"})
-
 
 class BeetsTokenQueryTool(BaseTool):
     name: str = "beets_token_query"
@@ -959,7 +942,7 @@ def get_beets_tools(agent) -> list:
     return [
         BeetsSwapTool(agent),
         BeetsAddLiquidityTool(agent),
-        # BeetsRemoveLiquidityTool(agent),
+        BeetsRemoveLiquidityTool(agent),
         BeetsTokenQueryTool(agent),
         BeetsPoolsQueryTool(agent),
         BeetsStakeDepositTool(agent),

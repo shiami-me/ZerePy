@@ -95,6 +95,7 @@ class DebridgeBridgeTool(BaseTool):
                     "amount": srcChainTokenIn.get("amount", "0")
                 }
             }
+            approve_transaction["status"] = "Initiated. Continue in the frontend."
 
             return json.dumps(approve_transaction)
 

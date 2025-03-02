@@ -187,7 +187,7 @@ class SonicWrapTool(BaseTool):
             **wrap_params
         )
         response["type"] = "wrap"
-
+        response["status"] = "Initiated. Continue in the frontend."
         return json.dumps(response)
 
 class SonicSwapTool(BaseTool):
