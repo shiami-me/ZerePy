@@ -1,4 +1,4 @@
-from typing import Type
+from typing import Type, Optional
 from pydantic import BaseModel, Field
 from langchain_core.tools import BaseTool
 import smtplib
@@ -15,14 +15,16 @@ class EmailInput(BaseModel):
     to: str = Field(description="Recipient email address")
     subject: str = Field(description="Email subject")
     body: str = Field(description="Email body content")
+    image_url: Optional[str] = Field(description="Optional image URL to include in the email")
 
 class EmailTool(BaseTool):
     description: str = """Sends emails using the provided information.
-    Input should be in the format: email(recipient, subject, body)
+    Input should be in the format: email(recipient, subject, body, image_url - optional)
     
     - recipient: The email address of the recipient
     - subject: The subject line of the email
     - body: The main content of the email
+    - image_url: Optional URL of an image to include in the email
     
     Example: email("user@example.com", "Daily Bitcoin Report", "Here's your daily Bitcoin price report...")
     
@@ -68,6 +70,7 @@ class EmailTool(BaseTool):
         to: str,
         subject: str,
         body: str,
+        image_url: Optional[str] = None
     ) -> str:
         """Send an email"""
         try:
@@ -76,18 +79,28 @@ class EmailTool(BaseTool):
                 return "Invalid email address format"
 
             # Create message
-            msg = MIMEMultipart()
+            msg = MIMEMultipart("alternative")
             msg['From'] = self._sender_email
             msg['To'] = to
             msg['Subject'] = subject
-
+            
             # Add body
             msg.attach(MIMEText(body, 'plain'))
 
-            # Send email using a fresh connection
-            smtp = self._get_smtp_connection()
-            smtp.send_message(msg)
-            smtp.quit()
+            if image_url:
+                html_body = f"""
+                <html>
+                    <body>
+                        <p>{body}</p>
+                        <img src="{image_url}" alt="Image">
+                    </body>
+                </html>
+                """
+                html_part = MIMEText(html_body, "html")
+                msg.attach(html_part)
+
+            with self._get_smtp_connection() as smtp:
+                smtp.send_message(msg)
 
             # Log the email
             self._log_email(to, subject)

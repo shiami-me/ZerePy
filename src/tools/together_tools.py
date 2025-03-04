@@ -22,8 +22,10 @@ class TogetherImageGenerationTool(BaseTool):
     - "Generate a realistic photo of a cat"
     - "Create digital art of a futuristic city"
     - "Make an image of mountains at sunset"
+    
+    Return Image URL: https://ipfs.io/ipfs/<ipfs_hash>
     """
-
+    return_direct: bool = True
     def __init__(self, agent):
         super().__init__()
         self._agent = agent
