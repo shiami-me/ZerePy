@@ -1,0 +1,7 @@
+FROM ghcr.io/foundry-rs/foundry:latest
+
+# Expose the default Anvil port
+EXPOSE 8545
+
+# Set the entry point to run Anvil with the Sonic mainnet fork
+ENTRYPOINT ["anvil", "--fork-url", "https://rpc.soniclabs.com", "--host", "0.0.0.0"]

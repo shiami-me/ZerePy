@@ -1,10 +1,11 @@
-from typing import Dict, Any
+from typing import Dict, Any, Callable, Awaitable
 from langchain_core.tools import BaseTool
 from croniter import croniter
 from datetime import datetime
 import os
 import json
 import logging
+import asyncio
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 
@@ -37,7 +38,7 @@ class SchedulerTool(BaseTool):
     This tool will schedule the task and return the next execution time. It does not execute the task immediately.
     """
     
-    def __init__(self, run_manager):
+    def __init__(self, run_manager: Callable[[str], Awaitable[Any]]):
         super().__init__()
         self._scheduler = BackgroundScheduler(
             jobstores={'default': SQLAlchemyJobStore(url='sqlite:///jobs.sqlite')}
@@ -110,7 +111,18 @@ class SchedulerTool(BaseTool):
         """Execute the scheduled task"""
         try:
             logger.info(f"Executing task: {task}")
-            TASK_REGISTRY["run_manager"](task)
+            # Create an event loop if there isn't one
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            # Run the coroutine in the event loop
+            future = TASK_REGISTRY["run_manager"](task)
+            if asyncio.iscoroutine(future):
+                loop.run_until_complete(future)
+            
             _log_operation = TASK_REGISTRY["logger"]
             
             # Log execution

@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://shiamiuser:shiamipassword@db:5432/shiamidb
+      - POSTGRES_PASSWORD=shiamipassword
+      - POSTGRES_USER=shiamiuser
+      - POSTGRES_DB=shiamidb
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - anvil
+    volumes:
+      - .:/app
+    restart: unless-stopped
+    networks:
+      - shiami-network
+
+  db:
+    image: postgres:15-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_PASSWORD=shiamipassword
+      - POSTGRES_USER=shiamiuser
+      - POSTGRES_DB=shiamidb
+    ports:
+      - "5433:5432"
+    restart: unless-stopped
+    networks:
+      - shiami-network
+
+  anvil:
+    build:
+      context: .
+      dockerfile: Dockerfile.anvil
+    ports:
+      - "8545:8545"
+    restart: unless-stopped
+    networks:
+      - shiami-network
+
+networks:
+  shiami-network:
+    driver: bridge
+
+volumes:
+  postgres_data:

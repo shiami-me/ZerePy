@@ -1,8 +1,8 @@
 [tool.poetry]
-name = "ZerePy"
+name = "Shiami"
 version = "0.1.0"
-description = "A launch-pad for AI agents"
-authors = ["Ayoub Ed <ayoub@blorm.xyz>", "Efrain <ef@blorm.xyz>", "Max <max@blorm.xyz>"]
+description = "ZerePy Modification for Shiami"
+authors = ["Parth Gupta <parth.eng1210@gmail.com>", "Chirag Khandelwal <chirag123khandelwal@gmail.com>"]
 license = "MIT License"
 readme = "README.md"
 
