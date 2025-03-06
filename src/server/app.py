@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -108,6 +108,7 @@ class ZerePyServer:
         )
         self.state = ServerState()
         self.setup_routes()
+        self.active_connections = set()
 
     def setup_routes(self):
         @self.app.get("/")
@@ -312,9 +313,54 @@ class ZerePyServer:
             except Exception as e:
                 raise HTTPException(status_code=400, detail=str(e))
 
+        @self.app.websocket("/ws/agent/chat")
+        async def websocket_agent_chat(websocket: WebSocket):
+            await websocket.accept()
+            self.active_connections.add(websocket)
+            
+            try:
+                data = await websocket.receive_json()
+                connection = data.get("connection")
+                action = data.get("action", "generate-text")
+                params = data.get("params", [])
+                
+                if not self.state.cli.agent:
+                    await websocket.send_json({"status": "error", "message": "No agent loaded"})
+                    return
+
+                try:
+                    # Create a callback for the generate_text method
+                    async def send_chunk(chunk):
+                        if isinstance(chunk, str):
+                            await websocket.send_text(chunk)
+                        else:
+                            await websocket.send_json(chunk)
+                    
+                    await self.state.cli.perform_action_websocket(
+                        connection=connection,
+                        action=action,
+                        params=params,
+                        websocket_callback=send_chunk
+                    )
+                    
+                    # Send completion message
+                    await websocket.send_json({"status": "complete"})
+                
+                except Exception as e:
+                    logger.error(f"Error in websocket chat: {e}")
+                    await websocket.send_json({"status": "error", "message": str(e)})
+            
+            except WebSocketDisconnect:
+                logger.info("WebSocket client disconnected")
+            except Exception as e:
+                logger.error(f"WebSocket error: {e}")
+            finally:
+                self.active_connections.remove(websocket)
+
+        # Keep the old endpoint for backward compatibility
         @self.app.post("/agent/chat")
         async def agent_chat(action_request: ActionRequest):
-            """Chat with the agent"""
+            """Chat with the agent (Legacy endpoint)"""
             if not self.state.cli.agent:
                 raise HTTPException(status_code=400, detail="No agent loaded")
 

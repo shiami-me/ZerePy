@@ -3,7 +3,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Any
 from pathlib import Path
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
@@ -538,6 +538,24 @@ class ZerePyCLI:
         logger.info("\nGoodbye! 👋")
         sys.exit(0)
 
+    async def perform_action_websocket(self, connection: str, action: str, params: list, websocket_callback: Callable[[Any], None]) -> None:
+        """Perform an action using WebSockets for streaming responses"""
+        if not self.agent:
+            raise ValueError("Agent not initialized")
+            
+        if connection not in self.agent.connection_manager.connections:
+            raise ValueError(f"Unknown connection: {connection}")
+            
+        conn = self.agent.connection_manager.connections[connection]
+        if not hasattr(conn, "perform_action_websocket"):
+            raise ValueError(f"Connection {connection} does not support WebSocket streaming")
+            
+        kwargs = {}
+        for i, param in enumerate(params):
+            if i < len(conn.actions[action].parameters):
+                kwargs[conn.actions[action].parameters[i].name] = param
+                
+        await conn.perform_action_websocket(action, kwargs, websocket_callback)
 
     ###################
     # Main CLI Loop
@@ -568,4 +586,4 @@ class ZerePyCLI:
             except EOFError:
                 self.exit([])
             except Exception as e:
-                logger.exception(f"Unexpected error: {e}") 
+                logger.exception(f"Unexpected error: {e}")

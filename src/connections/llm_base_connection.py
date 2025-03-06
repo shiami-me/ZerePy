@@ -6,7 +6,7 @@ import faiss
 import asyncio
 import functools
 
-from typing import Dict, Any, Annotated, Optional, AsyncGenerator
+from typing import Dict, Any, Annotated, Optional, AsyncGenerator, Callable
 from typing_extensions import TypedDict
 from dotenv import load_dotenv, set_key
 from langchain.schema import HumanMessage, AIMessage, SystemMessage
@@ -505,3 +505,121 @@ You are a helpful assistant with access to various tools. When using tools:
         
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, functools.partial(method, **kwargs))
+
+    async def generate_text_websocket(
+        self,
+        prompt: str,
+        system_prompt: str,
+        websocket_callback: Callable[[Any], None],
+        thread: str = None,
+        model: str = None,
+        **kwargs
+    ) -> None:
+        """Generate text using the LLM and send results through WebSocket"""
+        try:
+            enhanced_system_prompt = f"""
+{system_prompt}
+You are a helpful Decentralized Finance AI assistant. Your name is 'Shiami'(female).
+Give financial advices when asked to. Give a disclaimer when needed.
+Use context information when provided. Always use tools when user wants to perform any operations.
+Use emojis when needed. Give well formatted outputs. While telling metrics, make sure to give detailed explanations
+NEVER give any simulated responses, use tools when needed.
+
+You have access to various tools like Sonic for sonic blockchain related things, Silo for borrowing/lending, TogetherAI for image generation, Debridge for bridging, Beets for staking/liquidity, and TX tools for accessing transaction data on sonic blockchain.
+    
+For images, return - https://ipfs.io/ipfs/<ipfs_hash>
+Behave like a normal assistant if there's no wallet.
+You are a helpful assistant with access to various tools. When using tools:
+1. Don't explain what you're doing, just do it
+2. Don't ask for confirmation, just execute
+3. Don't mention the tool names
+4. Keep responses natural and concise
+5. Use multiple tools when needed
+6. When you need some external information or the user asks for internet search, use Tavily search tool when available.
+7. Use connect wallet address whenever it's needed, for example - for sonic related tools. Ask user to connect wallet if needed.
+"""
+            if not self.system_prompt:
+                self.system_prompt = enhanced_system_prompt
+
+            messages = [
+                HumanMessage(
+                    content=f"Instructions for you: {enhanced_system_prompt}"),
+                HumanMessage(content=f"Input: {prompt}")
+            ]
+
+            initial_state = {
+                "messages": messages,
+            }
+
+            config = {"configurable": {"thread_id": thread}}
+
+            db_uri = os.getenv('POSTGRES_DB_URI')
+            if not db_uri:
+                raise ValueError(
+                    "PostgreSQL connection URI not found in environment")
+
+            async with AsyncPostgresSaver.from_conn_string(db_uri) as checkpointer:
+                await checkpointer.setup()
+                graph = self.graph_builder.compile(checkpointer=checkpointer)
+                response_stream = graph.astream(
+                    initial_state,
+                    config,
+                    stream_mode="messages"
+                )
+
+                async for events in response_stream:
+                    for event in events:
+                        if hasattr(event, "content"):
+                            await websocket_callback(event.content)
+                        if hasattr(event, "additional_kwargs"):
+                            if isinstance(event.additional_kwargs, dict):
+                                function_call = event.additional_kwargs.get("function_call")
+                                
+                                if isinstance(function_call, dict):
+                                    function_name = function_call.get("name")
+
+                                    if function_name:
+                                        await websocket_callback(json.dumps({"tool": function_name}))
+                
+                state = await graph.aget_state(config=config)
+
+                if len(state.tasks) > 0:
+                    task = state.tasks[-1]
+                    if hasattr(task, "interrupts") and task.interrupts:
+                        interrupt_value = task.interrupts[0].value
+                        if isinstance(interrupt_value, dict) and "query" in interrupt_value:
+                            await websocket_callback(interrupt_value["query"])
+
+        except Exception as e:
+            logger.error(f"WebSocket generation error: {str(e)}")
+            await websocket_callback(json.dumps({"error": str(e)}))
+
+    async def perform_action_websocket(self, action_name: str, kwargs: Dict, websocket_callback: Callable[[Any], None]) -> None:
+        """Execute an LLM action with validation using WebSockets for output"""
+        if action_name not in self.actions:
+            raise KeyError(f"Unknown action: {action_name}")
+
+        load_dotenv()
+        if not self.is_configured(verbose=True):
+            raise ValueError(f"{self.__class__.__name__} is not properly configured")
+
+        action = self.actions[action_name]
+        errors = action.validate_params(kwargs)
+        if errors:
+            raise ValueError(f"Invalid parameters: {', '.join(errors)}")
+
+        if action_name == "generate-text":
+            # Use the WebSocket-specific implementation
+            await self.generate_text_websocket(**kwargs, websocket_callback=websocket_callback)
+        else:
+            # For other actions, execute normally and send the result
+            method_name = action_name.replace('-', '_')
+            method = getattr(self, method_name)
+            
+            if asyncio.iscoroutinefunction(method):
+                result = await method(**kwargs)
+            else:
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(None, functools.partial(method, **kwargs))
+                
+            await websocket_callback(json.dumps({"result": result}))
