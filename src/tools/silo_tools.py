@@ -18,7 +18,7 @@ def get_silo_config_address(token_0: str, token_1: str) -> Tuple[str, bool, str]
         Tuple of (config_address, is_token0_silo0) where is_token0_silo0 indicates if token_0 
         corresponds to silo0 in the pair
     """
-    url = "http://localhost:3001/api/silo/markets"
+    url = "https://shiami.me/api/silo/markets"
     headers = {
         "Content-Type": "application/json"
     }
@@ -51,7 +51,7 @@ def get_position_details(silo_address: str, sender: str) -> dict:
     Returns:
         Dict of position details
     """
-    url = "http://localhost:3001/api/silo/user/position"
+    url = "https://shiami.me/api/silo/user/position"
     headers = {
         "Content-Type": "application/json"
     }

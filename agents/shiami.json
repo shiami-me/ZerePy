@@ -56,7 +56,8 @@
       "name": "debridge"
     },
     {
-      "name": "beets"
+      "name": "beets",
+      "api_base_url": "https://balancer-utils.onrender.com"
     },
     {
       "name": "browser_use",
