@@ -73,6 +73,9 @@
     {
       "name": "silo",
       "network": "anvil"
+    },
+    {
+      "name": "privy"
     }
   ],
   "tasks": [
