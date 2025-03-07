@@ -101,6 +101,7 @@ class BeetsAddLiquidityTool(BaseTool):
     Natural language examples:
     - "I want to add 100 USDC of proportional liquidity to Beets pool 'Conspiracy Concerto' with 0.5% slippage". Input = {"type": "proportional", "pool": "Conspiracy Concerto", "slippage": 0.5, "userAddress": "0xUser..", "tokensIn": ["USDC"], "amountsIn": [100]}
     - "Add unbalanced liquidity with 200 USDC and 0.5 ETH to Beets pool 'Conspiracy Concerto' with 1% slippage". Input = {"type": "unbalanced", "pool": "Conspiracy Concerto", "slippage": 1, "userAddress": "0xUser..", "tokensIn": ["USDC", "ETH"], "amountsIn": [200, 0.5]}
+    - "Add unbalanced liquidity with 200 USDC to Beets Pool 'Conspiracy Concerto' with 1% slippage". Input = {"type": "unbalanced", "pool": "Conspiracy Concerto", "slippage": 1, "userAddress": "0xUser..", "tokensIn": ["USDC"], "amountsIn": [200]}
     - "Provide DAI single token liquidity to Beets pool 'Conspiracy Concerto' to get 10 BPT". Input = {"type": "single-token", "pool": "Conspiracy Concerto", "slippage": 0.5, "userAddress": "0xUser..", "tokensIn": ["DAI"], "bptOutAmount": 10}
     - "Add boosted proportional liquidity with 500 USDC amount to pool 'Conspiracy Concerto' using USDC and wETH tokens". Input = {"type": "boosted-proportional", "pool": "Conspiracy Concerto", "slippage": 0.5, "userAddress": "0xUser..", "tokensIn": ["USDC"], "amountsIn": [500]}
     
