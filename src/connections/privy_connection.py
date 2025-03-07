@@ -57,7 +57,7 @@ class PrivyConnection(BaseConnection):
             parameters=[
                 ActionParameter(name='message', type=str, required=True, description='Message that was signed to authorize this action'),
                 ActionParameter(name='signature', type=str, required=True, description='Signature of the message to verify authorization'),
-                ActionParameter(name='transaction', type=dict, required=True, description='Transaction details (to, value, chain_id, nonce, gas_limit, etc.)'),
+                ActionParameter(name='transaction', type=dict, required=True, description='Transaction details (to, value, chain_id, nonce, gas_limit, data, etc.)'),
                 ActionParameter(name='wallet',  type=str, required=True, description='Wallet address to sign the transaction with')
             ]
         )
@@ -68,7 +68,7 @@ class PrivyConnection(BaseConnection):
             parameters=[
                 ActionParameter(name='message', type=str, required=True, description='Message that was signed to authorize this action'),
                 ActionParameter(name='signature', type=str, required=True, description='Signature of the message to verify authorization'),
-                ActionParameter(name='transaction', type=dict, required=True, description='Transaction details (to, value)'),
+                ActionParameter(name='transaction', type=dict, required=True, description='Transaction details (to, value, data)'),
                 ActionParameter(name='chain_id', type=int, required=True, description='Chain ID for caip2 format eip155:{chain_id}'),
                 ActionParameter(name='wallet',  type=str, required=True, description='Wallet address to send the transaction from')
             ]
@@ -136,6 +136,7 @@ class PrivyConnection(BaseConnection):
                 - gas_limit: (optional) Gas limit
                 - max_fee_per_gas: (optional) Max fee per gas
                 - max_priority_fee_per_gas: (optional) Max priority fee per gas
+                - data: (optional) Contract calldata for contract interactions
                 - type: (optional) Transaction type (defaults to 2 for EIP-1559)
         """
         # First verify the signature
@@ -151,6 +152,10 @@ class PrivyConnection(BaseConnection):
         # Ensure transaction has type field (default to EIP-1559)
         if 'type' not in transaction:
             transaction['type'] = 2
+        
+        # If there's no data field and it's meant for a contract, add empty data
+        if 'data' not in transaction:
+            transaction['data'] = "0x"
         
         # Build the request body
         body = {
@@ -185,7 +190,9 @@ class PrivyConnection(BaseConnection):
             transaction: Transaction details dictionary containing:
                 - to: Recipient address
                 - value: Amount to send (in wei)
+                - data: (optional) Contract calldata for contract interactions
             chain_id: Chain ID for caip2 format
+            wallet: Wallet address to send from
         """
         # First verify the signature
         if not verify_signature(message, signature):
@@ -196,6 +203,10 @@ class PrivyConnection(BaseConnection):
         for field in required_fields:
             if field not in transaction:
                 raise PrivyConnectionError(f"Transaction missing required field: {field}")
+        
+        # If there's no data field and it's meant for a contract, add empty data
+        if 'data' not in transaction:
+            transaction['data'] = "0x"
         
         # Build the request body
         body = {
