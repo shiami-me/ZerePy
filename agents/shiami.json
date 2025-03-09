@@ -50,7 +50,7 @@
     },
     {
       "name": "tx",
-      "network": "anvil"
+      "network": "mainnet"
     },
     {
       "name": "debridge"
@@ -68,11 +68,11 @@
     },
     {
       "name": "sonic",
-      "network": "anvil"
+      "network": "mainnet"
     },
     {
       "name": "silo",
-      "network": "anvil"
+      "network": "mainnet"
     },
     {
       "name": "privy"
