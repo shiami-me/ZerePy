@@ -15,7 +15,7 @@ class EmailInput(BaseModel):
     to: str = Field(description="Recipient email address")
     subject: str = Field(description="Email subject")
     body: str = Field(description="Email body content")
-    image_url: Optional[str] = Field(description="Optional image URL to include in the email")
+    image_url: Optional[str] = Field(None ,description="Optional image URL to include in the email")
 
 class EmailTool(BaseTool):
     description: str = """Sends emails using the provided information.
@@ -24,7 +24,7 @@ class EmailTool(BaseTool):
     - recipient: The email address of the recipient
     - subject: The subject line of the email
     - body: The main content of the email
-    - image_url: Optional URL of an image to include in the email
+    - image_url: Optional URL of an image to include in the email. Default = ""
     
     Example: email("user@example.com", "Daily Bitcoin Report", "Here's your daily Bitcoin price report...")
     

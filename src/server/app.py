@@ -1,13 +1,15 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from web3 import Web3
+from eth_account.messages import encode_defunct
+from pydantic import BaseModel, Field
 
 from sqlalchemy.orm import Session
 from src.models.image import GeneratedImage
 from src.database import get_db, engine, Base
 from src.models.agent import Agent
 
-from pydantic import BaseModel
 from typing import Optional, List, Dict, Any, Type
 import logging
 import asyncio
@@ -16,10 +18,10 @@ import threading
 import datetime
 from pathlib import Path
 from src.cli import ZerePyCLI
-from fastapi.responses import StreamingResponse
 
 from src.agents.shiami import Shiami
 from src.connections.llm_base_connection import LLMBaseConnection
+from src.tools.scheduler_tool import SchedulerTool
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("server/app")
@@ -38,9 +40,22 @@ class CreateAgentRequest(BaseModel):
     prompts: Dict[str, str] = {}
     data: Dict[str, Dict[str, Any]] = {}
     task: str = ""
-    user_address: Optional[str] = None
+    user_address: str
     name: Optional[str] = None
     is_one_time: bool = True
+    signature: str = Field(..., description="Signature of 'I authorize creating an agent with my address: {user_address}'")
+
+
+class DeleteAgentRequest(BaseModel):
+    """Request model for deleting an agent"""
+    signature: str = Field(..., description="Signature of 'I authorize deleting agent with ID: {agent_id}'")
+    user_address: str
+
+
+class InteractAgentRequest(BaseModel):
+    """Request model for interacting with an agent"""
+    task: str
+    user_address: str
 
 
 class ServerState:
@@ -109,6 +124,35 @@ class ZerePyServer:
         self.state = ServerState()
         self.setup_routes()
         self.active_connections = set()
+        
+    def verify_signature(self, message: str, signature: str, address: str) -> bool:
+        """
+        Verify that a message was signed by the given address
+        
+        Args:
+            message: The message that was signed
+            signature: The signature to verify
+            address: The address that supposedly signed the message
+            
+        Returns:
+            bool: True if the signature is valid and from the address
+        """
+        try:
+            # Convert to checksum address
+            address = Web3.to_checksum_address(address)
+            
+            # Encode the message
+            w3 = Web3()
+            message_hash = encode_defunct(text=message)
+            
+            # Recover the address
+            recovered_address = w3.eth.account.recover_message(message_hash, signature=signature)
+            
+            # Compare (case-insensitive)
+            return recovered_address.lower() == address.lower()
+        except Exception as e:
+            logger.error(f"Error verifying signature: {str(e)}")
+            return False
 
     def setup_routes(self):
         @self.app.get("/")
@@ -174,6 +218,11 @@ class ZerePyServer:
 
         @self.app.post("/agent/create")
         async def create_agent(request: CreateAgentRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+            # Verify signature to ensure the user address is authentic
+            expected_message = f"I authorize creating an agent with my address: {request.user_address}"
+            if not self.verify_signature(expected_message, request.signature, request.user_address):
+                raise HTTPException(status_code=401, detail="Invalid signature. Authorization failed.")
+                
             model_provider = self.state.cli.agent.model_provider
             llm_class: Type[LLMBaseConnection] = self.state.cli.agent.connection_manager._class_name_to_type(
                 model_provider)
@@ -182,51 +231,12 @@ class ZerePyServer:
                 (config for config in self.state.cli.agent.connection_manager.config if config["name"] == model_provider), None)
 
             llm = llm_class(config, self.state.cli.agent, False)._get_client()
-            # agents = "scheduler", "price", "email_formatter", "report", "email", "image"
-            # default_prompts = {
-            #     "scheduler": """You are a scheduling assistant.""",
-            #     "price": """You are a cryptocurrency price prediction agent.""",
-            #     "report": """You are a price report report generating agent based on the given data.""",
-            #     "email_formatter": """You are an email content formatting agent.""",
-            #     "email": """You are an email sending agent. Send email to parth.eng1210@gmail.com""",
-            #     "image": """You are an image generation agent. Focus on the image prompt and ignore anything else. Output the image URL - https://ipfs.io/ipfs/[ipfs_hash]
-            #     Example - generate an image of roses and send its ipfs URL to....
-            #     Here, just focus on "generate an image of roses" and ignore the rest.
-            #     """
-            # }
             
-            # # Use default data if not provided
-            # default_data = {
-            #     "scheduler": {"name": "scheduler", "next": "price"},
-            #     "price": {"name": "price", "next": "report"},
-            #     "report": {"name": "text", "next": "email_formatter"},
-            #     "email_formatter": {"name": "text", "next": "email"},
-            #     "email": {"name": "email", "next": "FINISH"},
-            #     "image": {"name": "image", "next": "email"}
-            # }
+            # For one-time agents, agent_id is None
+            agent_id = None
             
-            
-            shiami = Shiami(
-                agents=request.agents,
-                llm=llm,
-                prompt="""You are an AI assistant managing conversations between the agents. If you get ipfs hash = ba343ei.... then URL = https://ipfs.io/ipfs/ba343ei....""",  # Keep this prompt as is
-                prompts=request.prompts,
-                data=request.data,
-                agent=self.state.cli.agent
-            )
-            
-            # For one-time agents, just execute the task and don't store it
-            if request.is_one_time:
-                if request.task:
-                    background_tasks.add_task(
-                        shiami.execute_task,
-                        request.task
-                    )
-                    return {"status": "success", "message": f"One-time agent created and task started: {request.task[:50]}..."}
-                else:
-                    return {"status": "error", "message": "One-time agents require a task"}
-            else:
-                # For persistent agents, store in database and return the ID
+            if not request.is_one_time:
+                # For persistent agents, create DB record first to get ID
                 if not request.user_address or not request.name:
                     raise HTTPException(status_code=400, detail="User address and name are required for persistent agents")
                 
@@ -244,20 +254,69 @@ class ZerePyServer:
                 db.add(db_agent)
                 db.commit()
                 db.refresh(db_agent)
+                agent_id = str(db_agent.id)
+            
+            shiami = Shiami(
+                agents=request.agents,
+                llm=llm,
+                prompt="""You are an AI assistant managing conversations between the agents. If you get ipfs hash = ba343ei.... then URL = https://ipfs.io/ipfs/ba343ei....""",  # Keep this prompt as is
+                prompts=request.prompts,
+                data=request.data,
+                agent=self.state.cli.agent,
+                agent_id=agent_id
+            )
+            
+            # For one-time agents, just execute the task and don't store it
+            if request.is_one_time:
+                if request.task:
+                    # Modified to capture and log the execution result
+                    async def execute_and_log_task():
+                        execution_result = await shiami.execute_task(request.task)
+                        logger.info(f"One-time agent task completed")
+                        if "logs" in execution_result:
+                            logger.info(f"Captured {len(execution_result['logs'])} message logs")
+                    
+                    background_tasks.add_task(execute_and_log_task)
+                    return {"status": "success", "message": f"One-time agent created and task started: {request.task[:50]}..."}
+                else:
+                    return {"status": "error", "message": "One-time agents require a task"}
+            else:
+                # For persistent agents, store in database and return the ID
+                if not request.user_address or not request.name:
+                    raise HTTPException(status_code=400, detail="User address and name are required for persistent agents")
                 
                 # If a task is provided, execute it and log it
                 if request.task:
-                    background_tasks.add_task(
-                        shiami.execute_task,
-                        request.task
-                    )
-                    
-                    # Add log entry for this task
+                    # Modified to capture and log the execution result with AI messages
+                    async def execute_and_log_task(db_agent_id: int):
+                        
+                        db: Session = next(get_db())
+                        try:
+                            db_agent = db.query(Agent).filter(Agent.id == db_agent_id).first()
+                            if not db_agent:
+                                logger.error(f"Agent with ID {db_agent_id} not found")
+                                return
+
+                            logger.info("Executing task...")
+                            execution_result = await shiami.execute_task(request.task)
+
+                            if "logs" in execution_result:
+                                for log_entry in execution_result["logs"]:
+                                    db_agent.add_log(log_entry)
+
+                                db.commit()
+                                logger.info(f"Stored {len(execution_result['logs'])} message logs for agent {db_agent.id}")
+
+                        finally:
+                            db.close()
                     db_agent.add_log({
                         "timestamp": str(datetime.datetime.now()),
-                        "task": request.task
+                        "task": request.task,
+                        "type": "task_start"
                     })
                     db.commit()
+                    
+                    background_tasks.add_task(execute_and_log_task, db_agent.id)
                 
                 return {
                     "status": "success", 
@@ -413,13 +472,17 @@ class ZerePyServer:
             return FileResponse(image.file_path)
         
         @self.app.post("/agent/{agent_id}/interact")
-        async def interact_agent(agent_id: str, task: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+        async def interact_agent(agent_id: str, request: InteractAgentRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
             """Interact with a previously saved agent"""
             try:
                 # Find the agent in the database
                 db_agent = db.query(Agent).filter(Agent.id == agent_id).first()
                 if not db_agent:
                     raise HTTPException(status_code=404, detail=f"Agent with ID {agent_id} not found")
+                
+                # Check if the user owns this agent
+                if db_agent.user_address.lower() != request.user_address.lower():
+                    raise HTTPException(status_code=403, detail="You do not have permission to interact with this agent")
                 
                 # Create a new Shiami instance using the stored configuration
                 model_provider = self.state.cli.agent.model_provider
@@ -438,25 +501,44 @@ class ZerePyServer:
                     prompt="You are an AI assistant managing conversations between the agents. If you get ipfs hash = ba343ei.... then URL = https://ipfs.io/ipfs/ba343ei....",
                     prompts=db_agent.prompts,
                     data=db_agent.data,
-                    agent=self.state.cli.agent
+                    agent=self.state.cli.agent,
+                    agent_id=str(db_agent.id)  # Pass agent ID to associate scheduled jobs
                 )
                 
-                # Add the task to the log
+                # Add initial task log
                 db_agent.add_log({
-                    "timestamp": str(datetime.now()),
-                    "task": task
+                    "timestamp": str(datetime.datetime.now()),
+                    "task": request.task,
+                    "type": "task_start"
                 })
                 db.commit()
                 
-                # Execute the task
-                background_tasks.add_task(
-                    shiami.execute_task,
-                    task
-                )
+                async def execute_and_log_task(db_agent_id: int):
+                    db: Session = next(get_db())
+                    try:
+                        db_agent = db.query(Agent).filter(Agent.id == db_agent_id).first()
+                        if not db_agent:
+                            logger.error(f"Agent with ID {db_agent_id} not found")
+                            return
+
+                        logger.info("Executing task...")
+                        execution_result = await shiami.execute_task(request.task)
+
+                        if "logs" in execution_result:
+                            for log_entry in execution_result["logs"]:
+                                db_agent.add_log(log_entry)
+
+                            db.commit()
+                            logger.info(f"Stored {len(execution_result['logs'])} message logs for agent {db_agent.id}")
+
+                    finally:
+                        db.close()
+                        
+                background_tasks.add_task(execute_and_log_task, db_agent.id)
                 
                 return {
                     "status": "success", 
-                    "message": f"Interaction started with agent {db_agent.name}: {task[:50]}...",
+                    "message": f"Interaction started with agent {db_agent.name}: {request.task[:50]}...",
                     "agent_id": agent_id
                 }
                 
@@ -464,14 +546,17 @@ class ZerePyServer:
                 raise HTTPException(status_code=500, detail=str(e))
                 
         @self.app.get("/agent/{agent_id}/logs")
-        async def get_agent_logs(agent_id: str, db: Session = Depends(get_db)):
+        async def get_agent_logs(
+            agent_id: str,
+            db: Session = Depends(get_db)
+        ):
             """Get logs for a specific agent"""
             try:
                 # Find the agent in the database
                 db_agent = db.query(Agent).filter(Agent.id == agent_id).first()
                 if not db_agent:
                     raise HTTPException(status_code=404, detail=f"Agent with ID {agent_id} not found")
-                    
+                logger.info(db_agent.logs)
                 return {
                     "agent_id": agent_id,
                     "name": db_agent.name,
@@ -479,7 +564,57 @@ class ZerePyServer:
                 }
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
+                
+        @self.app.delete("/agent/{agent_id}")
+        async def delete_agent(agent_id: str, request: DeleteAgentRequest, db: Session = Depends(get_db)):
+            """Delete a previously saved agent"""
+            try:
+                # Find the agent in the database
+                db_agent = db.query(Agent).filter(Agent.id == agent_id).first()
+                if not db_agent:
+                    raise HTTPException(status_code=404, detail=f"Agent with ID {agent_id} not found")
+                
+                # Verify ownership through signature
+                expected_message = f"I authorize deleting agent with ID: {agent_id}"
+                if not self.verify_signature(expected_message, request.signature, request.user_address):
+                    raise HTTPException(status_code=401, detail="Invalid signature. Authorization failed.")
+                
+                # Check if the user owns this agent
+                if db_agent.user_address.lower() != request.user_address.lower():
+                    raise HTTPException(status_code=403, detail="You do not have permission to delete this agent")
+                
+                # Clean up any scheduled jobs for this agent
+                cleaned_jobs = []
+                try:
+                    # Define a dummy async function for run_manager
+                    async def dummy_run_manager(task: str):
+                        logger.info(f"Dummy run manager called with: {task}")
+                        return {}
+                        
+                    # Create temporary scheduler tool with proper run_manager function
+                    temp_scheduler = SchedulerTool(run_manager=dummy_run_manager, agent_id=agent_id)
 
+                    # Clean up the jobs
+                    cleaned_jobs = temp_scheduler.cleanup_agent_jobs(agent_id)
+                    logger.info(f"Cleaned up {len(cleaned_jobs)} scheduled jobs for agent {agent_id}")
+                except Exception as e:
+                    logger.error(f"Error cleaning up scheduled jobs: {e}")
+                    # Continue with agent deletion even if job cleanup fails
+                
+                # Delete the agent
+                agent_name = db_agent.name
+                db.delete(db_agent)
+                db.commit()
+                
+                return {
+                    "status": "success", 
+                    "message": f"Agent '{agent_name}' with ID {agent_id} has been deleted successfully",
+                    "cleaned_jobs": len(cleaned_jobs)
+                }
+                
+            except Exception as e:
+                logger.error(f"Error deleting agent: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
 
 def create_app():
     server = ZerePyServer()

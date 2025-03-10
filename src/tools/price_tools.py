@@ -21,6 +21,7 @@ class GetTokenPriceTool(BaseTool):
     Input should be a token symbol (e.g. "S", "ANON")
     Returns the token's current price.
     Ex - what's the price of S?. Input - { token: "S" }
+    Give a price report of EGGS token. Input - { token: "EGGS" }
     """
 
     def _run(self, token: str) -> Dict[str, Any]:

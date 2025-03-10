@@ -149,10 +149,6 @@ class PrivyConnection(BaseConnection):
             if field not in transaction:
                 raise PrivyConnectionError(f"Transaction missing required field: {field}")
                 
-        # Ensure transaction has type field (default to EIP-1559)
-        if 'type' not in transaction:
-            transaction['type'] = 2
-        
         # If there's no data field and it's meant for a contract, add empty data
         if 'data' not in transaction:
             transaction['data'] = "0x"
@@ -176,9 +172,11 @@ class PrivyConnection(BaseConnection):
                 raise PrivyConnectionError(f"API request failed: {error_message}")
                 
             return response.json()
-            
         except requests.RequestException as e:
+            logger.info(f"Failed to sign transaction: {str(e)}")
             raise PrivyConnectionError(f"Failed to sign transaction: {str(e)}")
+        except Exception as e:
+            logger.info(f"Failed to sign transaction: {str(e)}")
 
     def send_transaction(self, message: str, signature: str, transaction: Dict, chain_id: int, wallet: str) -> Dict:
         """

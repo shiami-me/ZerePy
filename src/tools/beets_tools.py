@@ -302,7 +302,7 @@ class BeetsRemoveLiquidityTool(BaseTool):
     - "Take out exactly 500 USDC from my liquidity in Beets pool 'Conspiracy Concerto'". Input = {"type": "single-token-exact-out", "pool": "Conspiracy Concerto", "tokensOut": ["USDC"], "amountsOut": [500], "slippage": 0.5, "userAddress": "0xUser.."}
     - "Remove unbalanced liquidity from 'Conspiracy Concerto' to get specific amounts of tokens". Input = {"type": "unbalanced", "pool": "Conspiracy Concerto", "tokensOut": ["USDC", "ETH"], "amountsOut": [100, 0.5], "slippage": 0.5, "userAddress": "0xUser.."}
     - "Withdraw 20 BPT with boosted proportional strategy from 'Conspiracy Concerto' pool". Input = {"type": "boosted-proportional", "pool": "Conspiracy Concerto", "bptAmount": 20, "slippage": 0.5, "userAddress": "0xUser.."}
-    
+    - "Remove unbalanced 1wS from 'Staked Sonic Symphony'". Input = {"type": "unbalanced", "pool": "Staked Sonic Symphony", "tokensOut": ["wS"], "amountsOut": [1], "slippage": 0.5, "userAddress": "0xUser.."}
     Input should be a JSON string with:
     - type: "proportional", "single-token-exact-in", "single-token-exact-out", "unbalanced", or "boosted-proportional" (required)
     - pool: Pool Name (required)

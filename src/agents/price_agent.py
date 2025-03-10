@@ -2,7 +2,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from langgraph.graph import MessagesState
 from langgraph.prebuilt import create_react_agent
-from src.tools.price_tools import CryptoPricePredictionTool
+from src.tools.price_tools import CryptoPricePredictionTool, GetTokenPriceTool
 from ..utils.vector_store_utils import VectorStoreUtils
 from ..utils.create_agent import Agent
 
@@ -14,12 +14,12 @@ class PriceAgent:
     
     def __init__(self, llm, name: str, prompt: str, next: str):
         self._name = name
-        self.price_tool = CryptoPricePredictionTool()
+        self.price_tools = [CryptoPricePredictionTool(), GetTokenPriceTool()]
         self.price_agent = Agent(
-            tools=[self.price_tool],
-            vector_store=VectorStoreUtils(tools=[self.price_tool]),
+            tools=self.price_tools,
+            vector_store=VectorStoreUtils(tools=self.price_tools),
             llm=llm,
-            prompt=prompt
+            prompt=f"{prompt}\n\nYou have live token price data using get_token_price tool, and for predictions you can use the crypto_price_prediction tool. Do not make predictions unless asked to.\n Ex - 'What is the price of Bitcoin?' or 'Give a price report of EGGS token' or 'Predict the price of Bitcoin tomorrow'."
         )._create_conversation_graph()
         self.next = next
 

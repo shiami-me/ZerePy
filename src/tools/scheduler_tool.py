@@ -1,4 +1,4 @@
-from typing import Dict, Any, Callable, Awaitable
+from typing import Dict, Any, Callable, Awaitable, Optional, List
 from langchain_core.tools import BaseTool
 from croniter import croniter
 from datetime import datetime
@@ -38,13 +38,19 @@ class SchedulerTool(BaseTool):
     This tool will schedule the task and return the next execution time. It does not execute the task immediately.
     """
     
-    def __init__(self, run_manager: Callable[[str], Awaitable[Any]]):
+    # Define agent_id as a proper class attribute with type annotation
+    agent_id: Optional[str] = None
+    
+    def __init__(self, run_manager: Callable[[str], Awaitable[Any]], agent_id: Optional[str] = None):
         super().__init__()
         self._scheduler = BackgroundScheduler(
             jobstores={'default': SQLAlchemyJobStore(url='sqlite:///jobs.sqlite')}
         )
         TASK_REGISTRY["run_manager"] = run_manager
         TASK_REGISTRY["logger"] = self._log_operation
+        logger.info(f"Initializing scheduler with agent_id: {agent_id}")
+        # Store the agent ID as an instance attribute
+        self.agent_id = agent_id  # Now this will work since agent_id is properly defined
         self._scheduler.start()
         
         # Ensure logs directory exists
@@ -75,7 +81,8 @@ class SchedulerTool(BaseTool):
                 "cron": cron,
                 "metadata": {},
                 "created_at": datetime.now().isoformat(),
-                "task_id": task_id
+                "task_id": task_id,
+                "agent_id": self.agent_id  # This now correctly accesses the Pydantic field
             }
             
             # Parse cron expression into kwargs
@@ -106,6 +113,39 @@ class SchedulerTool(BaseTool):
         except Exception as e:
             logger.error(f"Error scheduling task: {e}")
             return f"Failed to schedule task: {str(e)}"
+            
+    def cleanup_agent_jobs(self, agent_id: str) -> List[str]:
+        """Remove all scheduled jobs associated with a specific agent"""
+        try:
+            removed_jobs = []
+            
+            # Get all jobs
+            jobs = self._scheduler.get_jobs()
+            for job in jobs:
+                try:
+                    # Get job ID
+                    job_id = job.id
+                    
+                    # Get job execution args
+                    args = job.args
+                    if len(args) >= 2 and isinstance(args[1], dict):
+                        task_details = args[1]
+                        if task_details.get("agent_id") == agent_id:
+                            # This job belongs to the deleted agent - remove it
+                            self._scheduler.remove_job(job_id)
+                            removed_jobs.append(job_id)
+                            self._log_operation("remove_agent_job", job_id, {
+                                "agent_id": agent_id,
+                                "removed_at": datetime.now().isoformat()
+                            })
+                except Exception as e:
+                    logger.error(f"Error processing job during cleanup: {e}")
+                    
+            return removed_jobs
+        except Exception as e:
+            logger.error(f"Error cleaning up agent jobs: {e}")
+            return []
+
     @staticmethod
     def _execute_task(task: str, task_details: Dict[str, Any]):
         """Execute the scheduled task"""
@@ -130,7 +170,8 @@ class SchedulerTool(BaseTool):
                 "task_id": task_details.get("task_id"),
                 "executed_at": datetime.now().isoformat(),
                 "status": "completed",
-                "task": task
+                "task": task,
+                "agent_id": task_details.get("agent_id")  # Include agent ID in logs
             }
             _log_operation("execute", execution_log["task_id"], execution_log)
             
@@ -141,7 +182,8 @@ class SchedulerTool(BaseTool):
                 "executed_at": datetime.now().isoformat(),
                 "status": "failed",
                 "error": str(e),
-                "task": task
+                "task": task,
+                "agent_id": task_details.get("agent_id")  # Include agent ID in logs
             }
             _log_operation("execute_failed", execution_log["task_id"], execution_log)
     @staticmethod
@@ -159,5 +201,5 @@ class SchedulerTool(BaseTool):
 
     def __del__(self):
         """Cleanup scheduler on deletion"""
-        if hasattr(self, 'scheduler'):
+        if hasattr(self, '_scheduler'):
             self._scheduler.shutdown()

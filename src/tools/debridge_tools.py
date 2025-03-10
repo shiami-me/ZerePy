@@ -12,9 +12,9 @@ logger = logging.getLogger("tools.debridge_tools")
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 class DebridgeBridgeTool(BaseTool):
-    name: str = "debridge_tx"
+    name: str = "cross_chain_bridge"
     description: str = """
-    debridge_tx: Bridge assets from Sonic to other chains using Debridge
+    cross_chain_bridge": Bridge assets from Sonic to other chains using Debridge
     Example: Bridge 1 Sonic to ETH. Use: {"srcChainTokenIn": "S", "srcChainTokenInAmount": 1, "dstChain": "ETH", "dstChainTokenOut": "ETH", "dstChainTokenOutRecipient": "sender address"}
     Bridge 1 S to USDC on ETH. Use: {"srcChainTokenIn": "S", "srcChainTokenInAmount": 1, "dstChain": "ETH", "dstChainTokenOut": "USDC", "dstChainTokenOutRecipient": "sender address"}
     
