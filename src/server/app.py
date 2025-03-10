@@ -21,7 +21,9 @@ from src.cli import ZerePyCLI
 
 from src.agents.shiami import Shiami
 from src.connections.llm_base_connection import LLMBaseConnection
-from src.tools.scheduler_tool import SchedulerTool
+from src.tools.scheduler_tool import SchedulerTool, get_scheduler_registry
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("server/app")
@@ -67,6 +69,111 @@ class ServerState:
         self.agent_running = False
         self.agent_task = None
         self._stop_event = threading.Event()
+        
+        # Initialize the global scheduler
+        self._init_scheduler()
+    
+    def _init_scheduler(self):
+        """Initialize the global scheduler and register it"""
+        try:
+            # Create scheduler
+            scheduler = BackgroundScheduler(
+                jobstores={'default': SQLAlchemyJobStore(url='sqlite:///jobs.sqlite')}
+            )
+            
+            # Register universal task handler
+            registry = get_scheduler_registry()
+            registry.set_scheduler(scheduler)
+            registry.set_run_manager(self._universal_task_handler)
+            
+            # Start scheduler
+            scheduler.start()
+            logger.info("Global scheduler initialized and started")
+        except Exception as e:
+            logger.error(f"Failed to initialize scheduler: {e}")
+    
+    async def _universal_task_handler(self, task: str):
+        """Universal handler for all scheduled tasks"""
+        try:
+            logger.info(f"Processing scheduled task: {task}")
+            
+            # Extract agent_id if the task includes it
+            agent_id = None
+            if task.startswith("agent_id:"):
+                parts = task.split(":", 2)
+                if len(parts) >= 3:
+                    agent_id = parts[1].strip()
+                    task = parts[2].strip()
+            
+            # If we have an agent_id, try to load that specific agent
+            if (agent_id):
+                db = next(get_db())
+                try:
+                    db_agent = db.query(Agent).filter(Agent.id == agent_id).first()
+                    if db_agent:
+                        # Create a temporary Shiami instance for this task
+                        model_provider = self.cli.agent.model_provider
+                        llm_class = self.cli.agent.connection_manager._class_name_to_type(
+                            model_provider)
+                        config = next(
+                            (config for config in self.cli.agent.connection_manager.config 
+                             if config["name"] == model_provider), None)
+                        
+                        llm = llm_class(config, self.cli.agent, False)._get_client()
+                        
+                        # Create the Shiami agent from the saved configuration
+                        from src.agents.shiami import Shiami
+                        shiami = Shiami(
+                            agents=db_agent.agents_list or [],
+                            llm=llm,
+                            prompt="Executing scheduled task",
+                            prompts=db_agent.prompts or {},
+                            data=db_agent.data or {},
+                            agent=self.cli.agent,
+                            agent_id=str(db_agent.id)
+                        )
+                        
+                        # Add log for task start
+                        db_agent.add_log({
+                            "timestamp": str(datetime.datetime.now()),
+                            "task": task,
+                            "type": "scheduled_task_start"
+                        })
+                        db.commit()
+                        
+                        # Execute the task
+                        execution_result = await shiami.execute_task(task)
+                        
+                        # Record logs
+                        if "logs" in execution_result:
+                            for log_entry in execution_result["logs"]:
+                                db_agent.add_log(log_entry)
+                            
+                            db.commit()
+                            logger.info(f"Stored {len(execution_result['logs'])} message logs for agent {db_agent.id}")
+                        
+                        return execution_result
+                    else:
+                        logger.error(f"Agent with ID {agent_id} not found for scheduled task")
+                        return {"error": f"Agent not found: {agent_id}"}
+                finally:
+                    db.close()
+            else:
+                # If no agent_id, use the default agent
+                if not self.cli.agent:
+                    logger.error("No agent loaded for scheduled task")
+                    return {"error": "No agent loaded"}
+                    
+                # Execute task with default agent
+                return await self.cli.agent.perform_action(
+                    connection="openai",
+                    action="generate-text",
+                    params=[task]
+                )
+        
+        except Exception as e:
+            logger.error(f"Error executing scheduled task: {e}", exc_info=True)
+            return {"error": str(e)}
 
     def _run_agent_loop(self):
         """Run agent loop in a separate thread"""
@@ -586,16 +693,12 @@ class ZerePyServer:
                 # Clean up any scheduled jobs for this agent
                 cleaned_jobs = []
                 try:
-                    # Define a dummy async function for run_manager
-                    async def dummy_run_manager(task: str):
-                        logger.info(f"Dummy run manager called with: {task}")
-                        return {}
-                        
-                    # Create temporary scheduler tool with proper run_manager function
-                    temp_scheduler = SchedulerTool(run_manager=dummy_run_manager, agent_id=agent_id)
-
-                    # Clean up the jobs
-                    cleaned_jobs = temp_scheduler.cleanup_agent_jobs(agent_id)
+                    # Create scheduler tool to clean up jobs
+                    # We don't need to provide a run_manager as we'll use the global one
+                    scheduler_tool = SchedulerTool(agent_id=agent_id)
+                    
+                    # Clean up the jobs associated with this agent
+                    cleaned_jobs = scheduler_tool.cleanup_agent_jobs(agent_id)
                     logger.info(f"Cleaned up {len(cleaned_jobs)} scheduled jobs for agent {agent_id}")
                 except Exception as e:
                     logger.error(f"Error cleaning up scheduled jobs: {e}")

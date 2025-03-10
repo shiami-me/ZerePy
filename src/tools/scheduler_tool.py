@@ -6,12 +6,90 @@ import os
 import json
 import logging
 import asyncio
+import threading
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+from pydantic import PrivateAttr, Field
 
 logger = logging.getLogger(__name__)
 
-TASK_REGISTRY = {}
+# Global registry for scheduler and run manager
+class GlobalSchedulerRegistry:
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super(GlobalSchedulerRegistry, cls).__new__(cls)
+                cls._instance.scheduler = None  # Will be set by the server
+                cls._instance.run_manager = None  # Will be set by the server
+                cls._instance.logger_func = None
+            return cls._instance
+    
+    def set_scheduler(self, scheduler):
+        """Set the global scheduler instance"""
+        self.scheduler = scheduler
+        
+    def set_run_manager(self, run_manager):
+        """Set the global run manager function"""
+        self.run_manager = run_manager
+
+# Function to initialize and get the global registry
+def get_scheduler_registry():
+    return GlobalSchedulerRegistry()
+
+# Standalone function for task execution to avoid serialization issues
+def execute_scheduled_task(task: str, task_details: Dict[str, Any]):
+    """Execute the scheduled task"""
+    try:
+        logger.info(f"Executing scheduled task: {task}")
+        
+        # Get the registry here instead of passing it as an argument
+        registry = get_scheduler_registry()
+        
+        if registry.run_manager is None:
+            logger.error("No run_manager found in registry")
+            return
+            
+        run_manager = registry.run_manager
+        
+        # Create an event loop if there isn't one
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        # Run the coroutine in the event loop
+        future = run_manager(task)
+        if asyncio.iscoroutine(future):
+            loop.run_until_complete(future)
+        
+        # Log execution
+        if registry and registry.logger_func:
+            execution_log = {
+                "task_id": task_details.get("task_id"),
+                "executed_at": datetime.now().isoformat(),
+                "status": "completed",
+                "task": task,
+                "agent_id": task_details.get("agent_id")
+            }
+            registry.logger_func("execute", execution_log["task_id"], execution_log)
+        
+    except Exception as e:
+        logger.error(f"Task execution failed: {e}")
+        registry = get_scheduler_registry()
+        if registry and registry.logger_func:
+            execution_log = {
+                "task_id": task_details.get("task_id"),
+                "executed_at": datetime.now().isoformat(),
+                "status": "failed",
+                "error": str(e),
+                "task": task,
+                "agent_id": task_details.get("agent_id")
+            }
+            registry.logger_func("execute_failed", execution_log["task_id"], execution_log)
 
 class SchedulerTool(BaseTool):
     name: str = "task_scheduler"
@@ -41,17 +119,22 @@ class SchedulerTool(BaseTool):
     # Define agent_id as a proper class attribute with type annotation
     agent_id: Optional[str] = None
     
-    def __init__(self, run_manager: Callable[[str], Awaitable[Any]], agent_id: Optional[str] = None):
-        super().__init__()
-        self._scheduler = BackgroundScheduler(
-            jobstores={'default': SQLAlchemyJobStore(url='sqlite:///jobs.sqlite')}
-        )
-        TASK_REGISTRY["run_manager"] = run_manager
-        TASK_REGISTRY["logger"] = self._log_operation
-        logger.info(f"Initializing scheduler with agent_id: {agent_id}")
-        # Store the agent ID as an instance attribute
-        self.agent_id = agent_id  # Now this will work since agent_id is properly defined
-        self._scheduler.start()
+    def __init__(self, run_manager: Optional[Callable[[str], Awaitable[Any]]] = None, agent_id: Optional[str] = None):
+        # Initialize Pydantic attributes first
+        super().__init__(agent_id=agent_id)
+        
+        # Initialize private attributes
+        self._registry = get_scheduler_registry()
+        
+        logger.info(f"Initializing scheduler tool with agent_id: {agent_id}")
+        
+        # Update run_manager in registry if provided and not already set
+        if run_manager is not None and self._registry.run_manager is None:
+            self._registry.set_run_manager(run_manager)
+        
+        # Set logger function if not already set
+        if self._registry.logger_func is None:
+            self._registry.logger_func = self._log_operation
         
         # Ensure logs directory exists
         os.makedirs("task_logs", exist_ok=True)
@@ -70,19 +153,27 @@ class SchedulerTool(BaseTool):
     ) -> str:
         """Schedule a task using cron expression"""
         try:
+            if not self._registry.scheduler:
+                return "Scheduler not initialized. Please try again later."
+            
             if not self._validate_cron(cron):
                 return f"Invalid cron expression: {cron}"
 
             task_id = f"task_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             
+            # Format the task to include agent_id if available
+            formatted_task = task
+            if self.agent_id:
+                formatted_task = f"agent_id:{self.agent_id}:{task}"
+            
             # Store task details
             task_details = {
-                "task": task,
+                "task": formatted_task,
                 "cron": cron,
                 "metadata": {},
                 "created_at": datetime.now().isoformat(),
                 "task_id": task_id,
-                "agent_id": self.agent_id  # This now correctly accesses the Pydantic field
+                "agent_id": self.agent_id
             }
             
             # Parse cron expression into kwargs
@@ -98,13 +189,14 @@ class SchedulerTool(BaseTool):
                 'day_of_week': cron_parts[4]
             }
             
-            # Add job to scheduler with proper kwargs
-            self._scheduler.add_job(
-                self._execute_task,
+            # Add job to scheduler with proper kwargs 
+            # Don't pass the registry object to avoid serialization issues
+            self._registry.scheduler.add_job(
+                execute_scheduled_task,
                 'cron',
-                args=[task, task_details],
+                args=[formatted_task, task_details],  # Remove registry from args
                 id=task_id,
-                **cron_kwargs  # Pass as kwargs instead of tuple
+                **cron_kwargs
             )
             
             self._log_operation("schedule", task_id, task_details)
@@ -117,10 +209,14 @@ class SchedulerTool(BaseTool):
     def cleanup_agent_jobs(self, agent_id: str) -> List[str]:
         """Remove all scheduled jobs associated with a specific agent"""
         try:
+            if not self._registry.scheduler:
+                logger.error("Scheduler not initialized")
+                return []
+                
             removed_jobs = []
             
             # Get all jobs
-            jobs = self._scheduler.get_jobs()
+            jobs = self._registry.scheduler.get_jobs()
             for job in jobs:
                 try:
                     # Get job ID
@@ -132,7 +228,7 @@ class SchedulerTool(BaseTool):
                         task_details = args[1]
                         if task_details.get("agent_id") == agent_id:
                             # This job belongs to the deleted agent - remove it
-                            self._scheduler.remove_job(job_id)
+                            self._registry.scheduler.remove_job(job_id)
                             removed_jobs.append(job_id)
                             self._log_operation("remove_agent_job", job_id, {
                                 "agent_id": agent_id,
@@ -147,46 +243,6 @@ class SchedulerTool(BaseTool):
             return []
 
     @staticmethod
-    def _execute_task(task: str, task_details: Dict[str, Any]):
-        """Execute the scheduled task"""
-        try:
-            logger.info(f"Executing task: {task}")
-            # Create an event loop if there isn't one
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-            
-            # Run the coroutine in the event loop
-            future = TASK_REGISTRY["run_manager"](task)
-            if asyncio.iscoroutine(future):
-                loop.run_until_complete(future)
-            
-            _log_operation = TASK_REGISTRY["logger"]
-            
-            # Log execution
-            execution_log = {
-                "task_id": task_details.get("task_id"),
-                "executed_at": datetime.now().isoformat(),
-                "status": "completed",
-                "task": task,
-                "agent_id": task_details.get("agent_id")  # Include agent ID in logs
-            }
-            _log_operation("execute", execution_log["task_id"], execution_log)
-            
-        except Exception as e:
-            logger.error(f"Task execution failed: {e}")
-            execution_log = {
-                "task_id": task_details.get("task_id"),
-                "executed_at": datetime.now().isoformat(),
-                "status": "failed",
-                "error": str(e),
-                "task": task,
-                "agent_id": task_details.get("agent_id")  # Include agent ID in logs
-            }
-            _log_operation("execute_failed", execution_log["task_id"], execution_log)
-    @staticmethod
     def _log_operation(operation: str, task_id: str, details: Dict[str, Any]):
         """Log scheduler operations"""
         log_entry = {
@@ -198,8 +254,3 @@ class SchedulerTool(BaseTool):
         
         with open("task_logs/scheduler_logs.jsonl", "a") as f:
             f.write(json.dumps(log_entry) + "\n")
-
-    def __del__(self):
-        """Cleanup scheduler on deletion"""
-        if hasattr(self, '_scheduler'):
-            self._scheduler.shutdown()

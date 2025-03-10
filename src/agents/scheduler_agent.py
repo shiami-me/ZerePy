@@ -13,7 +13,8 @@ class SchedulerAgent:
     
     def __init__(self, llm, name: str, prompt: str, next: str, run_manager, agent_id: str = None):
         self._name = name
-        self.scheduler_tool = SchedulerTool(run_manager, agent_id)
+        # Create the scheduler tool with the agent ID - run_manager comes from global registry
+        self.scheduler_tool = SchedulerTool(agent_id=agent_id)
         self.scheduler_agent = Agent(
             tools=[self.scheduler_tool],
             vector_store=VectorStoreUtils(tools=[self.scheduler_tool]),
