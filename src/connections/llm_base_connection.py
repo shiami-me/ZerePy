@@ -339,6 +339,10 @@ Use context information when provided. Always use tools when user wants to perfo
 Use emojis when needed. Give well formatted outputs. While telling metrics, make sure to give detailed explanations
 NEVER give any simulated responses, use tools when needed.
 
+When asked for strategies, provide a detailed and structured response, breaking it down into clear phases. Always include an exit strategy phase to guide users on how to finalize their positions safely.
+For better strategies, if the chat context is empty, suggest the user to use the dashboard of that specific protocol(eg - Silo Board, Beets on Sonic board) to add it to the chat context. To do so, you can simply go to the dashboard and click on the 'Add to Chat Context +' button.
+We have specialized dashboards which show the data of Pools and Markets on protocols such as Beets and Silo.
+
 You have access to various tools like Sonic for sonic blockchain related things, Silo for borrowing/lending, TogetherAI for image generation, Debridge for bridging, Beets for staking/liquidity, and TX tools for accessing transaction data on sonic blockchain.
 
 You also have a search_web tool for external information.
@@ -349,7 +353,7 @@ When using tools:
 1. Don't explain what you're doing, just do it
 2. Don't ask for confirmation, just execute
 3. Don't mention the tool names
-4. Keep responses natural and concise
+4. Keep responses natural but detailed and friendly.
 5. Use multiple tools when needed
 6. When you need some external information or the user asks for internet search, use Tavily search tool when available.
 7. Use connect wallet address whenever it's needed, for example - for sonic related tools. Ask user to connect wallet if needed.
@@ -530,6 +534,10 @@ Use context information when provided. Always use tools when user wants to perfo
 Use emojis when needed. Give well formatted outputs. While telling metrics, make sure to give detailed explanations
 NEVER give any simulated responses, use tools when needed.
 
+When asked for strategies, provide a detailed and structured response, breaking it down into clear phases. Always include an exit strategy phase to guide users on how to finalize their positions safely.
+For better strategies, if the chat context is empty, suggest the user to use the dashboard of that specific protocol(eg - Silo Board, Beets on Sonic board) to add it to the chat context. To do so, you can simply go to the dashboard and click on the 'Add to Chat Context +' button.
+We have specialized dashboards which show the data of Pools and Markets on protocols such as Beets and Silo.
+
 You have access to various tools like Sonic for sonic blockchain related things, Silo for borrowing/lending, TogetherAI for image generation, Debridge for bridging, Beets for staking/liquidity, and TX tools for accessing transaction data on sonic blockchain.
 
 You also have a search_web tool for external information.
@@ -540,7 +548,7 @@ When using tools:
 1. Don't explain what you're doing, just do it
 2. Don't ask for confirmation, just execute
 3. Don't mention the tool names
-4. Keep responses natural and concise
+4. Keep responses natural but detailed and friendly.
 5. Use multiple tools when needed
 6. When you need some external information or the user asks for internet search, use Tavily search tool when available.
 7. Use connect wallet address whenever it's needed, for example - for sonic related tools. Ask user to connect wallet if needed.
@@ -558,7 +566,7 @@ When using tools:
             initial_state = {
                 "messages": messages,
             }
-
+            logger.info(thread)
             config = {"configurable": {"thread_id": thread}}
 
             db_uri = os.getenv('POSTGRES_DB_URI')
@@ -600,7 +608,10 @@ When using tools:
 
         except Exception as e:
             logger.error(f"WebSocket generation error: {str(e)}")
-            await websocket_callback(json.dumps({"error": str(e)}))
+            try:
+                await websocket_callback(json.dumps({"error": str(e)}))
+            except Exception as ws_err:
+                logger.error(f"Failed to send error through WebSocket: {str(ws_err)}")
 
     async def perform_action_websocket(self, action_name: str, kwargs: Dict, websocket_callback: Callable[[Any], None]) -> None:
         """Execute an LLM action with validation using WebSockets for output"""

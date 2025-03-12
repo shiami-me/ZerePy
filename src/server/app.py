@@ -18,6 +18,7 @@ import threading
 import datetime
 from pathlib import Path
 from src.cli import ZerePyCLI
+import sys
 
 from src.agents.shiami import Shiami
 from src.connections.llm_base_connection import LLMBaseConnection
@@ -28,6 +29,8 @@ from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("server/app")
 
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 class ActionRequest(BaseModel):
     """Request model for agent actions"""
