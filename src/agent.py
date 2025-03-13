@@ -26,7 +26,10 @@ class ZerePyAgent:
     ):
         try:
             agent_path = Path("agents") / f"{agent_name}.json"
-            agent_dict = json.load(open(agent_path, "r"))
+
+            with open(agent_path, "r", encoding="utf-8") as file:
+                agent_dict = json.load(file)
+
 
             missing_fields = [field for field in REQUIRED_FIELDS if field not in agent_dict]
             if missing_fields:

@@ -31,7 +31,6 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from src.prompts import TAVILY_SEARCH_TOOL_PROMPT
 from langchain_core.documents import Document
 from langgraph.prebuilt import tools_condition, ToolNode
-from src.utils.stores.docs_store import DocsStore
 
 logger = logging.getLogger("connections.llm_base_connection")
 
