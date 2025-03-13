@@ -159,4 +159,4 @@ def swap_sonic(agent, **kwargs):
 
     except Exception as e:
         logger.error(f"Failed to swap tokens: {str(e)}")
-        return None
+        return str(e)

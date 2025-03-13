@@ -186,6 +186,9 @@ class SonicWrapTool(BaseTool):
             action_name="wrap-sonic",
             **wrap_params
         )
+        if not response:
+            return json.dumps({"error": f"Could not wrap S. Please check your balance. Or, this might be an internal issue with Shiami. Please try again later."})
+
         response["type"] = "wrap"
         response["status"] = "Initiated. Continue in the frontend."
         return json.dumps(response)
@@ -247,10 +250,8 @@ class SonicSwapTool(BaseTool):
                 action_name="swap-sonic",
                 **swap_params
             )
-            if response == None:
-                raise Exception("Swap failed. Return amount is too low, please try again with higher slippage")
-            route_summary["amountIn"] = str(int(route_summary["amountIn"]) / (10 ** 18))
-            route_summary["amountOut"] = str(int(route_summary["amountOut"]) / (10 ** 18))
+            route_summary["amountIn"] = str(int(route_summary["amountIn"]))
+            route_summary["amountOut"] = str(int(route_summary["amountOut"]))
             output = {
                 "approve": route_summary,
                 "swap": response

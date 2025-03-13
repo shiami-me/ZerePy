@@ -93,7 +93,7 @@ class LLMBaseConnection(BaseConnection):
             if "tx" in self.config.get("plugins", []):
                 self.tools.extend(get_tx_tools(self._agent))
 
-            self.tool_registry = {str(uuid.uuid4()): tool for tool in self.tools}
+            self.tool_registry = {str(i): tool for i, tool in enumerate(self.tools)}
 
             tool_documents = []
             for tool_id, tool in self.tool_registry.items():

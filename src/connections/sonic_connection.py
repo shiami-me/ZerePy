@@ -80,7 +80,8 @@ class SonicConnection(BaseConnection):
             
             if ticker.lower() in ["usdc", "usdce", "usd"]:
                 return "0x29219dd400f2bf60e5a23d13be72b486d4038894"
-                
+            if ticker.lower() in ["eth", "weth"]:
+                return "0x50c42deacd8fc9773493ed674b675be577f2634b"
             response = requests.get(
                 f"https://api.dexscreener.com/latest/dex/search?q={ticker}"
             )
