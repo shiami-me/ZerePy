@@ -80,7 +80,6 @@ class BeetsSwapTool(BaseTool):
             return json.dumps({"error": f"Invalid response format: {str(e)}", "status": "error"})
         except Exception as e:
             logger.error(f"Swap failed: {str(e)}")
-            logger.debug(traceback.format_exc())
             return json.dumps({"error": str(e), "status": "error"})
 
 class AddLiquidityInput(BaseModel):
@@ -276,8 +275,6 @@ class BeetsAddLiquidityTool(BaseTool):
             logger.error(f"Method error: {str(e)}")
             return json.dumps({"error": f"Operation not supported: {str(e)}", "status": "error"})
         except Exception as e:
-            logger.error(f"Add liquidity failed: {str(e)}")
-            logger.debug(traceback.format_exc())
             return json.dumps({"error": str(e), "status": "error"})
 
 
@@ -514,7 +511,7 @@ class BeetsRemoveLiquidityTool(BaseTool):
             return json.dumps({"error": f"Operation not supported: {str(e)}", "status": "error"})
         except Exception as e:
             logger.error(f"Remove liquidity failed: {str(e)}")
-            logger.debug(traceback.format_exc())
+             
             return json.dumps({"error": str(e), "status": "error"})
 
 class BeetsTokenQueryTool(BaseTool):
@@ -570,7 +567,7 @@ class BeetsTokenQueryTool(BaseTool):
 
         except Exception as e:
             logger.error(f"Token query failed: {str(e)}")
-            logger.debug(traceback.format_exc())
+             
             return json.dumps({"error": str(e), "status": "error"})
 
 class BeetsPoolsQueryTool(BaseTool):
@@ -684,7 +681,7 @@ class BeetsPoolsQueryTool(BaseTool):
             return json.dumps({"error": "Unable to connect to Beets service", "status": "error"})
         except Exception as e:
             logger.error(f"Pools query failed: {str(e)}")
-            logger.debug(traceback.format_exc())
+             
             return json.dumps({"error": str(e), "status": "error"})
 
 class BeetsStakeDepositTool(BaseTool):
@@ -747,7 +744,7 @@ class BeetsStakeDepositTool(BaseTool):
             return json.dumps({"error": f"Invalid response format: {str(e)}", "status": "error"})
         except Exception as e:
             logger.error(f"Stake deposit failed: {str(e)}")
-            logger.debug(traceback.format_exc())
+             
             return json.dumps({"error": str(e), "status": "error"})
 
 
@@ -812,7 +809,7 @@ class BeetsStakeUndelegateTool(BaseTool):
             return json.dumps({"error": f"Invalid response format: {str(e)}", "status": "error"})
         except Exception as e:
             logger.error(f"Stake undelegate failed: {str(e)}")
-            logger.debug(traceback.format_exc())
+             
             return json.dumps({"error": str(e), "status": "error"})
 
 
@@ -872,7 +869,7 @@ class BeetsStakeWithdrawTool(BaseTool):
             return json.dumps({"error": f"Invalid response format: {str(e)}", "status": "error"})
         except Exception as e:
             logger.error(f"Stake withdraw failed: {str(e)}")
-            logger.debug(traceback.format_exc())
+             
             return json.dumps({"error": str(e), "status": "error"})
 
 
@@ -935,7 +932,7 @@ class BeetsStakingInfoTool(BaseTool):
             return json.dumps({"error": f"Invalid response format: {str(e)}", "status": "error"})
         except Exception as e:
             logger.error(f"Getting staking info failed: {str(e)}")
-            logger.debug(traceback.format_exc())
+             
             return json.dumps({"error": str(e), "status": "error"})
 
 def get_beets_tools(agent) -> list:
