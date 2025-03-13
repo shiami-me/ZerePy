@@ -22,7 +22,8 @@ def get_silo_config_address(token_0: str, token_1: str, id: Optional[int] = None
     headers = {
         "Content-Type": "application/json"
     }
-    
+    if id is not None:
+        id = int(id)
     response = requests.get(url, headers=headers)
     data = response.json()
     for market in data["markets"]:
@@ -146,8 +147,8 @@ class SiloPositionTool(BaseTool):
 
     def _run(self, token_0: str, token_1: str, sender: str, id: Optional[int] = None) -> str:
         try:
-            silo_config_address, is_token0_silo0, _, decimals0 = get_silo_config_address(token_0, token_1, int(id))
-            _, _, _, decimals1 = get_silo_config_address(token_1, token_0, int(id))
+            silo_config_address, is_token0_silo0, _, decimals0 = get_silo_config_address(token_0, token_1, id)
+            _, _, _, decimals1 = get_silo_config_address(token_1, token_0, id)
             token_idx = 0 if is_token0_silo0 else 1
             silo0_address = self._agent.connection_manager.connections["silo"]._get_silo_address(silo_config_address, token_idx)
             
@@ -204,7 +205,7 @@ class SiloDepositTool(BaseTool):
     def _run(self, token_0: str, token_1: str, amount: float, 
              collateral_type: int = 0, sender: Optional[str] = None, id: Optional[int] = None) -> str:
         try:
-            silo_config_address, is_token0_silo0, token_address, decimals = get_silo_config_address(token_0, token_1, int(id))
+            silo_config_address, is_token0_silo0, token_address, decimals = get_silo_config_address(token_0, token_1, id)
             # Get appropriate silo address based on token position
             token_idx = 0 if is_token0_silo0 else 1
             silo_address = self._agent.connection_manager.connections["silo"]._get_silo_address(silo_config_address, token_idx)
@@ -252,7 +253,7 @@ class SiloBorrowTool(BaseTool):
     def _run(self, token_0: str, token_1: str, amount: float, sender: str, 
              receiver: Optional[str] = None, id: Optional[int] = None) -> str:
         try:
-            silo_config_address, is_token0_silo0, token_address, decimals = get_silo_config_address(token_0, token_1, int(id))
+            silo_config_address, is_token0_silo0, token_address, decimals = get_silo_config_address(token_0, token_1, id)
             # Get appropriate silo address based on token position
             token_idx = 0 if is_token0_silo0 else 1  
             silo_address = self._agent.connection_manager.connections["silo"]._get_silo_address(silo_config_address, token_idx)
@@ -293,7 +294,7 @@ class SiloRepayTool(BaseTool):
     
     def _run(self, token_0: str, token_1: str, amount: float, sender: Optional[str] = None, id: Optional[int] = None) -> str:
         try:
-            silo_config_address, is_token0_silo0, token_address, decimals = get_silo_config_address(token_0, token_1, int(id))
+            silo_config_address, is_token0_silo0, token_address, decimals = get_silo_config_address(token_0, token_1, id)
             # Get appropriate silo address based on token position
             token_idx = 0 if is_token0_silo0 else 1
             silo_address = self._agent.connection_manager.connections["silo"]._get_silo_address(silo_config_address, token_idx)
@@ -341,7 +342,7 @@ class SiloWithdrawTool(BaseTool):
     def _run(self, token_0: str, token_1: str, amount: float, receiver: Optional[str] = None, 
              collateral_type: int = 0, sender: Optional[str] = None, id: Optional[int] = None) -> str:
         try:
-            silo_config_address, is_token0_silo0, token_address, decimals = get_silo_config_address(token_0, token_1, int(id))
+            silo_config_address, is_token0_silo0, token_address, decimals = get_silo_config_address(token_0, token_1, id)
             # Get appropriate silo address based on token position
             token_idx = 0 if is_token0_silo0 else 1
             silo_address = self._agent.connection_manager.connections["silo"]._get_silo_address(silo_config_address, token_idx)
