@@ -16,7 +16,6 @@ class TogetherImageGenerationTool(BaseTool):
     - prompt: Text description of the image to generate
     - width: (optional) Image width in pixels (default: 768)
     - height: (optional) Image height in pixels (default: 768)
-    - steps: (optional) Number of inference steps (default: 4)
     
     Examples:
     - "Generate a realistic photo of a cat"
@@ -35,7 +34,6 @@ class TogetherImageGenerationTool(BaseTool):
         prompt: str,
         width: Optional[int] = 768,
         height: Optional[int] = 768,
-        steps: Optional[int] = 4,
     ) -> str:
         """
         Generate images using Together AI
@@ -60,7 +58,7 @@ class TogetherImageGenerationTool(BaseTool):
                 model = "black-forest-labs/FLUX.1-schnell-Free",
                 width = width,
                 height = height,
-                steps = steps,
+                steps = 3,
                 n = 1
             )
             logger.info(f"Response: {response}")
@@ -77,7 +75,7 @@ class TogetherImageGenerationTool(BaseTool):
                     "prompt": prompt,
                     "width": width,
                     "height": height,
-                    "steps": steps
+                    "steps": 3
                 }
             }
             
@@ -94,7 +92,7 @@ class TogetherImageGenerationTool(BaseTool):
                     "prompt": prompt,
                     "width": width,
                     "height": height,
-                    "steps": steps
+                    "steps": 3
                 }
             })
 
