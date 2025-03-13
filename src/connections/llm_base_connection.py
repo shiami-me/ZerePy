@@ -1,7 +1,6 @@
 import logging
 import os
 import json
-import uuid
 import faiss
 import asyncio
 import functools
@@ -40,6 +39,19 @@ class State(TypedDict):
     messages: Annotated[list, add_messages]
     selected_tools: list[str]
 
+class SafeWebSocketCallback:
+    def __init__(self, websocket_callback):
+        self.websocket_callback = websocket_callback
+        self.is_connected = True
+    
+    async def send(self, data):
+        if self.is_connected:
+            try:
+                await self.websocket_callback(data)
+            except Exception as e:
+                self.is_connected = False
+                return False
+        return self.is_connected
 
 class LLMBaseConnection(BaseConnection):
     """Base class for LLM connections with common functionality"""
@@ -523,6 +535,9 @@ When using tools:
         **kwargs
     ) -> None:
         """Generate text using the LLM and send results through WebSocket"""
+        # Create safe websocket callback wrapper
+        safe_ws = SafeWebSocketCallback(websocket_callback)
+        
         try:
             enhanced_system_prompt = f"""
 {system_prompt}
@@ -585,7 +600,7 @@ When using tools:
                 async for events in response_stream:
                     for event in events:
                         if hasattr(event, "content"):
-                            await websocket_callback(event.content)
+                            await safe_ws.send(event.content)                                
                         if hasattr(event, "additional_kwargs"):
                             if isinstance(event.additional_kwargs, dict):
                                 function_call = event.additional_kwargs.get("function_call")
@@ -594,7 +609,9 @@ When using tools:
                                     function_name = function_call.get("name")
 
                                     if function_name:
-                                        await websocket_callback(json.dumps({"tool": function_name}))
+                                        tool_json = json.dumps({"tool": function_name})
+                                        await safe_ws.send(tool_json)
+                
                 
                 state = await graph.aget_state(config=config)
 
@@ -603,12 +620,12 @@ When using tools:
                     if hasattr(task, "interrupts") and task.interrupts:
                         interrupt_value = task.interrupts[0].value
                         if isinstance(interrupt_value, dict) and "query" in interrupt_value:
-                            await websocket_callback(interrupt_value["query"])
-
+                            await safe_ws.send(interrupt_value["query"])        
         except Exception as e:
             logger.error(f"WebSocket generation error: {str(e)}")
             try:
-                await websocket_callback(json.dumps({"error": str(e)}))
+                if safe_ws.is_connected:
+                    await safe_ws.send(json.dumps({"error": str(e)}))
             except Exception as ws_err:
                 logger.error(f"Failed to send error through WebSocket: {str(ws_err)}")
 
