@@ -362,12 +362,12 @@ class SiloWithdrawTool(BaseTool):
             return f"Error withdrawing tokens: {str(e)}"
 
 class SiloPoolsTool(BaseTool):
-    name: str = "silo_pools"
+    name: str = "silo_markets"
     description: str = """
-    silo_pools: Get available Silo lending/borrowing pools, optionally filtered by tokens.
+    silo_markets: Get available Silo lending/borrowing markets, optionally filtered by tokens.
     
     Ex - get all Silo pools. Then tokens: "" (empty string or omit)
-        get pools containing Sonic. Then tokens: "S" 
+        get markets containing Sonic. Then tokens: "S" 
         get pools for Sonic and USDC. Then tokens: "S,USDC"
         get pools for ETH, S, USDC. Then tokens: "ETH,S,USDC"
         
