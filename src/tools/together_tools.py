@@ -87,7 +87,7 @@ class TogetherImageGenerationTool(BaseTool):
             logger.error(error_msg)
             return json.dumps({
                 "status": "error",
-                "message": error_msg,
+                "error": error_msg,
                 "parameters": {
                     "prompt": prompt,
                     "width": width,

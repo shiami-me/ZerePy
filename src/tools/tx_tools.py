@@ -93,7 +93,7 @@ class GetTransactionsTool(BaseTool):
             return json.dumps({"error": "Unable to connect to transaction service", "status": "error"})
         except Exception as e:
             logger.error(f"Failed to get transactions: {str(e)}")
-            logger.debug(traceback.format_exc())
+             
             return json.dumps({"error": str(e), "status": "error"})
     
     def _format_value(self, value_str: str, decimals: int = 18) -> str:
@@ -171,7 +171,7 @@ class GetTokenBalancesTool(BaseTool):
             else:
                 return json.dumps({
                     "status": "error",
-                    "message": response.get("error", "Failed to get token balances"),
+                    "error": response.get("error", "Failed to get token balances"),
                     "data": []
                 })
                 
@@ -192,7 +192,7 @@ class GetTokenBalancesTool(BaseTool):
             return json.dumps({"error": "Unable to connect to blockchain service", "status": "error"})
         except Exception as e:
             logger.error(f"Failed to get token balances: {str(e)}")
-            logger.debug(traceback.format_exc())
+             
             return json.dumps({"error": str(e), "status": "error"})
 
 def get_tx_tools(agent) -> List[BaseTool]:

@@ -494,7 +494,7 @@ class ZerePyServer:
                 params = data.get("params", [])
                 
                 if not self.state.cli.agent:
-                    await websocket.send_json({"status": "error", "message": "No agent loaded"})
+                    await websocket.send_json({"status": "error", "error": "No agent loaded"})
                     return
 
                 try:
@@ -517,7 +517,7 @@ class ZerePyServer:
                 
                 except Exception as e:
                     logger.error(f"Error in websocket chat: {e}")
-                    await websocket.send_json({"status": "error", "message": str(e)})
+                    await websocket.send_json({"status": "error", "error": str(e)})
             
             except WebSocketDisconnect:
                 logger.info("WebSocket client disconnected")
