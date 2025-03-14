@@ -119,6 +119,7 @@ class GeminiConnection(LLMBaseConnection):
         """Check if a specific model is available"""
         try:
             supported_models = [
+                "gemini-2.0-flash"
                 "gemini-1.5-pro",
                 "gemini-1.5-flash",
             ]
@@ -131,6 +132,7 @@ class GeminiConnection(LLMBaseConnection):
         """List all available Gemini models"""
         try:
             supported_models = [
+                "gemini-2.0-flash",
                 "gemini-1.5-pro",
                 "gemini-1.5-flash",
             ]
