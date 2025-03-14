@@ -194,9 +194,9 @@ class SonicWrapTool(BaseTool):
         return json.dumps(response)
 
 class SonicSwapTool(BaseTool):
-    name: str = "sonic_swap"
+    name: str = "sonic_swap_kyber"
     description: str = """
-    sonic_swap: Swap tokens
+    sonic_swap_kyber: Swap tokens Using KyberSwap
     Example: For "Swap 100 Sonic to BTC", use: {"from_token": "S", "to_token": "BTC", "amount": 100}
     "Swap 1 S to Anon with 5% Slippage", use: {"from_token": "S", "to_token": "Anon", "amount": 1, "slippage": 5.0}
     Swap between any tokens on Sonic. Input should be a JSON string with:
