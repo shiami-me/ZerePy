@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger("tools.beets_tools")
 
 class BeetsSwapTool(BaseTool):
+    return_direct: bool =True
     name: str = "beets_swap"
     description: str = """
     beets_swap: Swap tokens using Beets (Balancer)
@@ -19,19 +20,20 @@ class BeetsSwapTool(BaseTool):
     - "Exchange 100 USDC for ETH with Beets Balancer"
     
     Input should be a JSON string with:
+    - amountIn: Amount of token to swap (required)
     - tokenIn: Token symbol, name or address to swap from (required)
     - tokenOut: Token symbol, name or address to swap to (required)
     - slippage: Slippage tolerance (e.g. 1 for 1%) (required)
     - userAddress: User address (required)
     
-    Example: Swap 1 ETH for USDC. Use: {"tokenIn": "ETH", "tokenOut": "USDC", "slippage": 1, "userAddress": "0xUser.."}
+    Example: Swap 1 ETH for USDC. Use: {"amountIn": 1, "tokenIn": "ETH", "tokenOut": "USDC", "slippage": 1, "userAddress": "0xUser.."}
     """
 
     def __init__(self, agent):
         super().__init__()
         self._agent = agent
 
-    def _run(self, tokenIn: str, tokenOut: str, slippage: float = 0.005, userAddress: str = "") -> str:
+    def _run(self, amountIn: float, tokenIn: str, tokenOut: str, slippage: float = 0.005, userAddress: str = "") -> str:
         try:
             logger.info(f"Swapping {tokenIn} for {tokenOut}")
             
@@ -48,6 +50,7 @@ class BeetsSwapTool(BaseTool):
             
             # Execute the swap
             params = {
+                "amountIn": amountIn,
                 "tokenIn": tokenIn,
                 "tokenOut": tokenOut,
                 "slippage": slippage,
@@ -59,12 +62,7 @@ class BeetsSwapTool(BaseTool):
             logger.info(f"Swap response: {response}")
             if not response:
                 return json.dumps({"error": "Failed to swap tokens", "status": "error"})
-
-            return json.dumps({
-                "status": "success",
-                "data": response,
-                "message": f"Successfully swapped {tokenIn} for {tokenOut}"
-            })
+            return json.dumps(response)
 
         except RequestException as e:
             logger.error(f"API request failed: {str(e)}")
@@ -93,6 +91,7 @@ class AddLiquidityInput(BaseModel):
 
 
 class BeetsAddLiquidityTool(BaseTool):
+    return_direct: bool = True
     name: str = "beets_add_liquidity"
     description: str = """
     beets_add_liquidity: Add liquidity to a Beets pool
@@ -108,7 +107,7 @@ class BeetsAddLiquidityTool(BaseTool):
     - type: "proportional", "unbalanced", "single-token", "boosted-proportional", or "boosted-unbalanced" (required). Default = "proportional"
     - pool: Pool Name (required)
     - userAddress: User wallet address - Connected Wallet (required)
-    - tokensIn: List of input token symbols (required)
+    - tokensIn: List of input token symbols(atleast 1) (required)
     - amountsIn: List of input token amounts (for every type except single-token. Not needed for single-token), Default = []
     - bptOutAmount: Amount of BPT tokens to receive (only for 'single-token' type). Default = 0
     - slippage: Slippage tolerance (required). Default = 0.5
@@ -152,7 +151,6 @@ class BeetsAddLiquidityTool(BaseTool):
             logger.info(pool_data)
             poolId=pool_data["id"]
             version=pool_data["protocolVersion"]
-            action_name = f"add_{type.replace('-', '_')}_liquidity_v{version}"
             
             # Prepare parameters based on the type of liquidity addition
             params = {
@@ -161,8 +159,18 @@ class BeetsAddLiquidityTool(BaseTool):
                 "userAddress": userAddress
             }
             token_symbols = tokensIn  
+            tokensIn = []
+            underlying = False
+            for token in pool_data.get("poolTokens", []):
+                if token.get("symbol") in token_symbols:
+                    tokensIn.append(token)
+                elif token.get("underlyingToken") and token["underlyingToken"].get("symbol") in token_symbols:
+                    tokensIn.append(token["underlyingToken"])
+                    underlying = True
+                    if not type.startswith("boosted"):
+                        type = "boosted-" + type
 
-            tokensIn = [token for token in pool_data.get("poolTokens", []) if token["symbol"] in token_symbols]
+            action_name = f"add_{type.replace('-', '_')}_liquidity_v{version}"
             # Validate and add type-specific parameters
             if type == "proportional":
                 if not amountsIn or not tokensIn:
@@ -184,13 +192,17 @@ class BeetsAddLiquidityTool(BaseTool):
                         "error": "Reference token and amount are required for proportional liquidity. Please check if input tokens are valid",
                         "status": "error"
                     })
-                
-                params["tokensIn"] = [
-                    token["underlyingToken"]["address"] 
-                    for token in pool_data.get("poolTokens", []) 
-                    if token.get("underlyingToken")
-                ]
-                
+                if underlying:
+                    params["tokensIn"] = [
+                        token["underlyingToken"]["address"] 
+                        for token in pool_data.get("poolTokens", []) 
+                        if token.get("underlyingToken")
+                    ]
+                else:
+                    params["tokensIn"] = [
+                        token["address"]
+                        for token in pool_data.get("poolTokens", [])
+                    ]
                 if not params["tokensIn"]:
                     return json.dumps({
                         "error": "No underlying tokens found for the pool. It may not be a boosted pool.",
@@ -222,7 +234,6 @@ class BeetsAddLiquidityTool(BaseTool):
                     })
                     i += 1
                 params["amountsIn"] = formatted_amounts
-                
             elif type == "single-token":
                 if bptOutAmount is None:
                     return json.dumps({

@@ -369,6 +369,7 @@ When using tools:
 6. When you need some external information or the user asks for internet search, use Tavily search tool when available.
 7. Use connect wallet address whenever it's needed, for example - for sonic related tools. Ask user to connect wallet if needed.
 8. Do not hallucinate, DO NOT RETURN SIMULATED RESPONSES. Use tools.
+9. When sending transactions, keep in mind that no transaction is completed by you. Your work is just to initiate the transaction.
 """
             if not self.system_prompt:
                 self.system_prompt = enhanced_system_prompt
@@ -567,6 +568,7 @@ When using tools:
 6. When you need some external information or the user asks for internet search, use Tavily search tool when available.
 7. Use connect wallet address whenever it's needed, for example - for sonic related tools. Ask user to connect wallet if needed.
 8. Do not hallucinate, DO NOT RETURN SIMULATED RESPONSES. Use tools.
+9. When sending transactions, keep in mind that no transaction is completed by you. Your work is just to initiate the transaction.
 """
             if not self.system_prompt:
                 self.system_prompt = enhanced_system_prompt

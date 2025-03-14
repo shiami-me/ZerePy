@@ -225,6 +225,7 @@ class BeetsConnection(BaseConnection):
             name='swap',
             description='Swap tokens using Beets',
             parameters=[
+                ActionParameter(name='amountIn', type=float, required=True, description='Amount to swap'),
                 ActionParameter(name='tokenIn', type=str, required=True, description='Token address to swap from'),
                 ActionParameter(name='tokenOut', type=str, required=True, description='Token address to swap to'),
                 ActionParameter(name='slippage', type=float, required=True, description='Slippage tolerance'),
@@ -1133,10 +1134,11 @@ class BeetsConnection(BaseConnection):
             logger.error(f"Failed to get pools: {str(e)}")
             raise BeetsConnectionError(f"Failed to get pools: {str(e)}")
     
-    def swap(self, tokenIn: str, tokenOut: str, slippage: float = 0.005, userAddress: str = None) -> Dict:
+    def swap(self, amountIn: float, tokenIn: str, tokenOut: str, slippage: float = 0.005, userAddress: str = None) -> Dict:
         """Swap tokens using Beets"""
         try:
             payload = {
+                "amount": str(amountIn),
                 "tokenIn": tokenIn,
                 "tokenOut": tokenOut,
                 "userAddress": userAddress,
