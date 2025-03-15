@@ -326,16 +326,16 @@ class SiloRepayTool(BaseTool):
 class SiloWithdrawTool(BaseTool):
     name: str = "silo_withdraw"
     description: str = """
-    silo_withdraw: Withdraw tokens from a Silo smart contract. Supports both Collateral (0) and Protected (1) withdrawals.
-    Ex - withdraw Collateral 1000 USDC from Sonic/USDC pair. Then token_0: USDC, token_1: Sonic, collateral_type: 0 (collateral), amount: 1000.0
-        withdraw Protected 100 Sonic from Sonic/USDC pair. Then token_0: Sonic, token_1: USDC, collateral_type: 1 (protected), amount: 100.0
-        withdraw Collateral 1000 USDC from market with ID 1. Then id: 1, token_0: USDC, token_1: Sonic, collateral_type: 0, amount: 1000.0
+    silo_withdraw: Withdraw tokens from a Silo smart contract. Supports both Collateral (1) and Protected (0) withdrawals.
+    Ex - withdraw Collateral 1000 USDC from Sonic/USDC pair. Then token_0: USDC, token_1: Sonic, collateral_type: 1 (collateral), amount: 1000.0
+        withdraw Protected 100 Sonic from Sonic/USDC pair. Then token_0: Sonic, token_1: USDC, collateral_type: 0 (protected), amount: 100.0
+        withdraw Collateral 1000 USDC from market with ID 1. Then id: 1, token_0: USDC, token_1: Sonic, collateral_type: 1, amount: 1000.0
     Args:
         token_0: Symbol of the token to withdraw
         token_1: Symbol of the other token in the Silo pair
         amount: Amount of tokens to withdraw
         receiver: Address to receive the withdrawn assets (optional)
-        collateral_type: Type of collateral (0 for Collateral, 1 for Protected)
+        collateral_type: Type of collateral (1 for Collateral, 0 for Protected)
         sender: Address of the sender (optional)
         id: Optional market ID to specify a specific market
     """

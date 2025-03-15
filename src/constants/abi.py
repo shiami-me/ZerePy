@@ -130,6 +130,43 @@ ERC20_ABI = [
     }
 ]
 
+
+""" incentive abi -   function claimRewards(address _to) external virtual returns (AccruedRewards[] memory accruedRewards) {
+"""
+SILO_INCENTIVE_ABI = [
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "_to",
+                "type": "address"
+            }
+        ],
+        "name": "claimRewards",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "asset",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "amount",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct ISilo.AccruedRewards[]",
+                "name": "accruedRewards",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    }
+]
+
 SILO_ABI = [
     {
       "inputs": [

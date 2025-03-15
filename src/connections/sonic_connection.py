@@ -212,7 +212,7 @@ class SonicConnection(BaseConnection):
             else:
                 tx = {
                     'to': Web3.to_checksum_address(to_address),
-                    'value': self._web3.to_wei(amount, 'ether'),
+                    'value': str(self._web3.to_wei(amount, 'ether')),
                     'gas': 21000,
                     'gasPrice': self._web3.eth.gas_price,
                     'chainId': chain_id
@@ -243,7 +243,7 @@ class SonicConnection(BaseConnection):
             }
             
             tx["gas"] = self._web3.eth.estimate_gas(tx)
-
+            tx["value"] = str(amount_raw)
             return tx
         except Exception as e:
             logger.error(f"Failed to wrap Sonic: {e}")
@@ -378,7 +378,7 @@ class SonicConnection(BaseConnection):
                     raise SonicConnectionError("Insufficient output amount. Please try with higher slippage")
                 logger.warning(f"Gas estimation failed: {e}, using default gas limit")
                 tx['gas'] = 500000  # Default gas limit
-            
+            tx["value"] = str(self._web3.to_wei(amount, 'ether')) if token_in.lower() == self.NATIVE_TOKEN.lower() else '0'
             return tx
                 
         except Exception as e:

@@ -454,7 +454,7 @@ class SiloConnection(BaseConnection):
             ).call()
             
             if amount_wei > max_withdraw:
-                raise SiloConnectionError(f"Withdrawal amount exceeds maximum allowed for collateral type {collateral_type}: {max_withdraw}")
+                raise SiloConnectionError(f"Withdrawal amount exceeds maximum allowed for collateral type {collateral_type}: {str(max_withdraw / (10**decimals))}")
             
             # Build transaction
             tx = silo_contract.functions.withdraw(
