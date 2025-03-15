@@ -109,6 +109,9 @@ def get_silo_pools(tokens: str = None) -> dict:
                 "isBorrowable": not item["silo0"]["isNonBorrowable"],
                 "token0": item["silo0"]["symbol"],
                 "token1": item["silo1"]["symbol"],
+                "max_ltv": int(item["silo0"]["maxLtv"]) / 10**18,
+                "lt": int(item["silo0"]["lt"]) / 10**18,
+                "liquidity": int(item["silo0"]["liquidity"]) / 10**18
             },
             "silo1": {
                 "market": item["silo1"]["symbol"],
@@ -117,6 +120,9 @@ def get_silo_pools(tokens: str = None) -> dict:
                 "isBorrowable": not item["silo1"]["isNonBorrowable"],
                 "token0": item["silo1"]["symbol"],
                 "token1": item["silo0"]["symbol"],
+                "max_ltv": int(item["silo1"]["maxLtv"]) / 10**18,
+                "lt": int(item["silo1"]["lt"]) / 10**18,
+                "liquidity": int(item["silo1"]["liquidity"]) / 10**18
             }
         })
     
@@ -388,6 +394,247 @@ class SiloPoolsTool(BaseTool):
         except Exception as e:
             return f"Error getting Silo pools: {str(e)}"
 
+class SiloLoopingStrategyTool(BaseTool):
+    name: str = "silo_looping_opportunities"
+    description: str = """
+    silo_looping_opportunities: Find optimal yield farming strategies through Silo deposit-borrow loops.
+    
+    This tool identifies Silo markets with favorable deposit/borrow spreads, calculates potential yields
+    at different leverage levels, and provides step-by-step instructions.
+    Also output max_leverage and apr, along with the outputs specific to the loops, like net_apr after n loops.
+    
+    Ex - find looping strategies for all markets. Then initial_amount: 1000 (default)
+        find looping strategies for USDC. Then token: "USDC", initial_amount: 1000
+        find top 5 looping strategies for S and stS. max loops 50. Then token: "S,stS", limit: 5, max_loops: 50
+        find top 5 looping strategies. Then limit: 5, initial_amount: 10000.
+        simulate looping strategy for S and USDC. Then token: "S,USDC", initial_amount: 1000, min_loops: 2, max_loops: 50
+    
+    Args:
+        initial_amount: Initial capital to simulate looping with (default: 1000)
+        token: Optional tokens symbol to filter by
+        limit: Maximum number of strategies to return (default: 10)
+        min_loops: Minimum number of loops to consider (default: 2)
+        max_loops: Maximum number of loops to consider. Max Value = 50 (default: 50)
+    """
+    
+    def __init__(self, agent, llm):
+        super().__init__()
+        self._agent = agent
+        self._llm = llm
+    
+    def _calculate_loop_yields(self, deposit_apr, borrow_apr, initial_amount, loops, max_ltv):
+        """Calculate yields for different loop iterations considering max LTV."""
+        results = []
+        
+        total_deposit = initial_amount
+        total_borrowed = 0
+        max_leverage = 1 / (1 - max_ltv)
+        max_yield = ((deposit_apr * max_leverage) - (borrow_apr * (max_leverage - 1)))
+        for i in range(loops + 1):
+            if i == 0:
+                leverage = 1
+                net_apr = deposit_apr
+            else:
+                # Calculate how much can be borrowed based on max LTV
+                borrow_capacity = total_deposit * max_ltv
+                borrowable_amount = borrow_capacity - total_borrowed
+                loop_amount = borrowable_amount * 0.95  # Apply safety factor
+                if loop_amount <= 0:
+                    break  # Stop looping if no more can be borrowed
+                
+                total_deposit += loop_amount
+                total_borrowed += loop_amount
+                
+                leverage = 1 + (total_borrowed / initial_amount)
+                
+                net_apr = ((total_deposit * deposit_apr) - (total_borrowed * borrow_apr)) / initial_amount
+
+            results.append({
+                "loops": i,
+                "leverage": leverage,
+                "net_apr": net_apr * 100,  # Convert to percentage
+                "total_deposit": total_deposit,
+                "total_borrowed": total_borrowed,
+                "max_leverage": max_leverage,
+                "max_yield": max_yield * 100
+            })
+        
+        return results
+
+    def _find_looping_opportunities(self, initial_amount=1000, token=None, limit=10, min_loops=2, max_loops=50):
+        """Find and analyze looping opportunities across Silo markets."""
+        # Get all available markets
+        markets_data = json.loads(SiloPoolsTool(self._agent, self._llm)._run(tokens=token))
+        markets = markets_data.get("markets", [])
+        
+        opportunities = []
+        
+        for market in markets:
+            # Analyze both sides of the market (token0/token1 and token1/token0)
+            market_id = market.get("id")
+            is_verified = market.get("reviewed", False)
+            
+            silo0 = market.get("silo0", {})
+            silo1 = market.get("silo1", {})
+            
+            # First direction: deposit silo0 token, borrow silo1 token
+            if silo1.get("isBorrowable", False):
+                token0 = silo0.get("market")  # Use market as token symbol
+                token1 = silo1.get("market")  # Use market as token symbol
+                # Convert APR strings to floats properly
+                deposit_apr = float(silo0.get("deposit_apr", "0%").rstrip("%"))
+                borrow_apr = float(silo1.get("borrow_apr", "0%").rstrip("%"))
+                # Get liquidity (max borrowable amount)
+                liquidity = silo1.get("liquidity", 0)
+                if deposit_apr > borrow_apr:
+                    spread = deposit_apr - borrow_apr
+                    loop_results = self._calculate_loop_yields(
+                        deposit_apr/100, borrow_apr/100, initial_amount, max_loops, silo0.get("max_ltv", 0.7)
+                    )
+                    
+                    best_loop = max(loop_results, key=lambda x: x["net_apr"])
+                    if best_loop["loops"] >= min_loops:
+                        opportunities.append({
+                            "market_id": market_id,
+                            "market_name": f"{token0}/{token1}",
+                            "verified": is_verified,
+                            "deposit_token": token0,
+                            "borrow_token": token1,
+                            "deposit_apr": deposit_apr,
+                            "borrow_apr": borrow_apr,
+                            "apr_spread": spread,
+                            "best_loops": best_loop["loops"],
+                            "max_leverage": best_loop["max_leverage"],
+                            "max_yield": best_loop["max_yield"],
+                            "initial_amount": initial_amount,
+                            "available_liquidity": liquidity,
+                            "loop_results": loop_results
+                        })
+            
+            # Second direction: deposit silo1 token, borrow silo0 token
+            if silo0.get("isBorrowable", False):
+                token0 = silo1.get("market")  # Use market as token symbol
+                token1 = silo0.get("market")  # Use market as token symbol
+                # Convert APR strings to floats properly
+                deposit_apr = float(silo1.get("deposit_apr", "0%").rstrip("%"))
+                borrow_apr = float(silo0.get("borrow_apr", "0%").rstrip("%"))
+                # Get liquidity (max borrowable amount)
+                liquidity = silo0.get("liquidity", 0)
+                
+                if deposit_apr > borrow_apr:
+                    spread = deposit_apr - borrow_apr
+                    loop_results = self._calculate_loop_yields(
+                        deposit_apr/100, borrow_apr/100, initial_amount, max_loops, silo1.get("max_ltv", 0.7)
+                    )
+                    
+                    best_loop = max(loop_results, key=lambda x: x["net_apr"])
+                    
+                    if best_loop["loops"] >= min_loops:
+                        opportunities.append({
+                            "market_id": market_id,
+                            "market_name": f"{token0}/{token1}",
+                            "verified": is_verified,
+                            "deposit_token": token0,
+                            "borrow_token": token1,
+                            "deposit_apr": deposit_apr,
+                            "borrow_apr": borrow_apr,
+                            "apr_spread": spread,
+                            "best_loops": best_loop["loops"],
+                            "max_leverage": best_loop["max_leverage"],
+                            "max_yield": best_loop["max_yield"],
+                            "initial_amount": initial_amount,
+                            "available_liquidity": liquidity,
+                            "loop_results": loop_results
+                        })
+        
+        # Sort opportunities by max yield (descending)
+        sorted_opportunities = sorted(
+            opportunities, 
+            key=lambda x: x["max_yield"], 
+            reverse=True
+        )
+        
+        # Return top N opportunities
+        return sorted_opportunities[:limit]
+    
+    def _format_strategy(self, opportunity):
+        """Format a looping strategy into a readable output."""
+        strategy = {
+            "market_id": opportunity["market_id"],
+            "market": opportunity["market_name"],
+            "verified": opportunity["verified"],
+            "deposit_token": opportunity["deposit_token"],
+            "borrow_token": opportunity["borrow_token"],
+            "strategy_overview": {
+                "deposit_apr": f"{opportunity['deposit_apr']:.2f}%",
+                "borrow_apr": f"{opportunity['borrow_apr']:.2f}%",
+                "spread": f"{opportunity['apr_spread']:.2f}%",
+                "best_loops": opportunity["best_loops"],
+                "max_leverage": f"{opportunity['max_leverage']:.2f}x",
+                "max_yield": f"{opportunity['max_yield']:.2f}% APR",
+                "initial_investment": f"${opportunity['initial_amount']:.2f}",
+                "available_liquidity": f"${opportunity['available_liquidity']:.2f}"
+            },
+            "execution_steps": [
+                f"1. Deposit {opportunity['deposit_token']} on Silo",
+                f"2. Borrow {opportunity['borrow_token']}",
+                f"3. Swap {opportunity['borrow_token']} for {opportunity['deposit_token']}",
+                "4. Repeat steps 1-3 for desired leverage (see yield table)"
+            ],
+            "yield_table": []
+        }
+        
+        # Add yield data for different loop iterations
+        for loop in opportunity["loop_results"]:
+            strategy["yield_table"].append({
+                "loops": loop["loops"],
+                "leverage": f"{loop['leverage']:.2f}x",
+                "net_apr": f"{loop['net_apr']:.2f}%",
+                "total_deposit": f"${loop['total_deposit']:.2f}",
+                "total_borrowed": f"${loop['total_borrowed']:.2f}"
+            })
+        
+        # Add risk considerations
+        strategy["risk_considerations"] = [
+            "Price impact and slippage may reduce actual yields",
+            "Market volatility can increase liquidation risk at higher leverage",
+            "APRs may change over time based on market conditions",
+            f"Consider maintaining a buffer below maximum leverage for safety",
+            f"Available liquidity(represented by the token amount) of {opportunity['available_liquidity']:.2f} {opportunity['borrow_token']} limits maximum borrowing"
+        ]
+        
+        return strategy
+    
+    def _run(self, initial_amount: float = 1000, token: Optional[str] = None, 
+             limit: int = 10, min_loops: int = 2, max_loops: int = 50) -> str:
+        logger.info(f"Finding looping strategies with initial amount: {initial_amount}, token: {token}, limit: {limit}, min_loops: {min_loops}, max_loops: {max_loops}")
+        try:
+            opportunities = self._find_looping_opportunities(
+                initial_amount=initial_amount,
+                token=token,
+                limit=int(limit),
+                min_loops=int(min_loops),
+                max_loops=int(max_loops)
+            )
+            
+            if not opportunities:
+                return "No profitable looping strategies found with the current parameters."
+            
+            result = {
+                "message": f"Output is based on initial investment of ${initial_amount:.2f} and max {max_loops} loops",
+                "strategies_count": len(opportunities),
+                "initial_amount": initial_amount,
+                "filtered_token": token,
+                "strategies": [self._format_strategy(opp) for opp in opportunities],
+                "note": "The outputs only consider the base APR, for any additional rewards check https://v2.silo.finance/"
+            }
+            
+            return json.dumps(result, indent=2)
+        
+        except Exception as e:
+            return f"Error finding looping strategies: {str(e)}"
+
+
 def get_silo_tools(agent, llm) -> list:
     """Get all Silo-related tools"""
     return [
@@ -396,5 +643,6 @@ def get_silo_tools(agent, llm) -> list:
         SiloBorrowTool(agent, llm),
         SiloRepayTool(agent, llm),
         SiloWithdrawTool(agent, llm),
-        SiloPoolsTool(agent, llm)
+        SiloPoolsTool(agent, llm),
+        SiloLoopingStrategyTool(agent, llm)
     ]
