@@ -6,7 +6,7 @@ from web3.types import TxReceipt
 from web3.middleware import geth_poa_middleware
 
 from src.constants.networks import SONIC_NETWORKS
-from src.constants.abi import SILO_ABI, SILO_CONFIG
+from src.constants.abi import SILO_ABI, SILO_CONFIG, SILO_INCENTIVE_ABI
 from dotenv import load_dotenv
 
 from .base_connection import BaseConnection, Action, ActionParameter
@@ -33,6 +33,7 @@ class SiloConnection(BaseConnection):
         self.rpc_url = network_config["rpc_url"]
         self.silo_config = SILO_CONFIG
         self.silo_abi = SILO_ABI
+        self.silo_incentives = SILO_INCENTIVE_ABI
         
         self._initialize_web3()
 
@@ -473,6 +474,39 @@ class SiloConnection(BaseConnection):
             raise SiloConnectionError(f"Contract error during withdraw: {str(e)}")
         except Exception as e:
             raise SiloConnectionError(f"Failed to withdraw: {str(e)}")
+    
+    def claim_rewards(self, sender: str) -> Dict:
+        """
+        Claim rewards from a Silo
+
+        Args:
+            sender: Address of the sender
+        """
+        try:
+            if not self.is_configured():
+                raise SiloConnectionError("Silo connection not properly configured")
+
+            # Get Silo contract
+            silo_contract = self.web3.eth.contract(
+                address="0x2D3d269334485d2D876df7363e1A50b13220a7D8",
+                abi=self.silo_incentives
+            )
+
+            # Build transaction
+            tx = silo_contract.functions.claimRewards(
+                sender
+            ).build_transaction({
+                'from': sender,
+                'gas': 500000,
+                'nonce': self.web3.eth.get_transaction_count(sender)
+            })
+
+            return tx
+
+        except ContractLogicError as e:
+            raise SiloConnectionError(f"Contract error during claim rewards: {str(e)}")
+        except Exception as e:
+            raise SiloConnectionError(f"Failed to claim rewards: {str(e)}")
 
     def perform_action(self, action_name: str, kwargs) -> Any:
         """Execute a Silo action with validation"""

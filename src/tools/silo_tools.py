@@ -367,6 +367,32 @@ class SiloWithdrawTool(BaseTool):
             return result
         except Exception as e:
             return f"Error withdrawing tokens: {str(e)}"
+# silo connection has claim_rewards function that takes sender address as the arg
+class SiloClaimRewardsTool(BaseTool):
+    name: str = "silo_claim_rewards"
+    description: str = """
+    silo_claim_rewards: Claim rewards from a Silo smart contract.
+    Ex - claim my silo rewards. Then sender: connected wallet <user_address>
+    Args:
+        sender: Address of the user(connected wallet)
+    """
+    
+    def __init__(self, agent, llm):
+        super().__init__()
+        self._agent = agent
+        self._llm = llm
+    
+    def _run(self, sender: str) -> str:
+        try:
+            result = self._agent.connection_manager.connections["silo"].claim_rewards(
+                sender=sender
+            )
+            result["type"] = "claim_rewards"
+            result["status"] = "Initiated. Continue in the frontend."
+            result["sender"] = sender
+            return result
+        except Exception as e:
+            return f"Error claiming rewards: {str(e)}"
 
 class SiloPoolsTool(BaseTool):
     name: str = "silo_markets"
@@ -643,6 +669,7 @@ def get_silo_tools(agent, llm) -> list:
         SiloBorrowTool(agent, llm),
         SiloRepayTool(agent, llm),
         SiloWithdrawTool(agent, llm),
+        SiloClaimRewardsTool(agent, llm),
         SiloPoolsTool(agent, llm),
         SiloLoopingStrategyTool(agent, llm)
     ]
