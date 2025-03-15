@@ -111,7 +111,7 @@ def get_silo_pools(tokens: str = None) -> dict:
                 "token1": item["silo1"]["symbol"],
                 "max_ltv": int(item["silo0"]["maxLtv"]) / 10**18,
                 "lt": int(item["silo0"]["lt"]) / 10**18,
-                "liquidity": int(item["silo0"]["liquidity"]) / 10**18
+                "liquidity": int(item["silo0"]["liquidity"]) / 10**(item["silo0"]["decimals"])
             },
             "silo1": {
                 "market": item["silo1"]["symbol"],
@@ -122,7 +122,7 @@ def get_silo_pools(tokens: str = None) -> dict:
                 "token1": item["silo0"]["symbol"],
                 "max_ltv": int(item["silo1"]["maxLtv"]) / 10**18,
                 "lt": int(item["silo1"]["lt"]) / 10**18,
-                "liquidity": int(item["silo1"]["liquidity"]) / 10**18
+                "liquidity": int(item["silo1"]["liquidity"]) / 10**(item["silo1"]["decimals"])
             }
         })
     
