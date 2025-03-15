@@ -10,7 +10,7 @@ POSTGRES_DB_URI = os.getenv("POSTGRES_DB_URI")
 if not POSTGRES_DB_URI:
     raise ValueError("POSTGRES_DB_URI environment variable is not set")
 
-engine = create_engine(POSTGRES_DB_URI)
+engine = create_engine(POSTGRES_DB_URI, pool_pre_ping=True, pool_size=10, max_overflow=20)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
