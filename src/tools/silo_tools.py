@@ -93,11 +93,12 @@ def get_silo_pools(tokens: str = None) -> dict:
     response = requests.get(url, headers=headers, params=params)
     response.raise_for_status()
     data = response.json()
-    
     # Process market data to format it nicely
     formatted_markets = []
     for item in data["markets"]:
         # Format first token in the pair
+        silo0Logo = item["silo0"]["logos"]["trustWallet"] or item["silo0"]["logos"]["coinGecko"] or item["silo0"]["logos"]["coinMarketCap"] or { "large": "https://coin-images.coingecko.com/coins/images/52857/large/wrapped_sonic.png?1734536585" }
+        silo1Logo = item["silo1"]["logos"]["trustWallet"] or item["silo1"]["logos"]["coinGecko"] or item["silo1"]["logos"]["coinMarketCap"] or { "large": "https://coin-images.coingecko.com/coins/images/52857/large/wrapped_sonic.png?1734536585" }
         formatted_markets.append({
             "id": item["id"],
             "reviewed": item["isVerified"],
@@ -111,7 +112,8 @@ def get_silo_pools(tokens: str = None) -> dict:
                 "token1": item["silo1"]["symbol"],
                 "max_ltv": int(item["silo0"]["maxLtv"]) / 10**18,
                 "lt": int(item["silo0"]["lt"]) / 10**18,
-                "liquidity": int(item["silo0"]["liquidity"]) / 10**(item["silo0"]["decimals"])
+                "liquidity": int(item["silo0"]["liquidity"]) / 10**(item["silo0"]["decimals"]),
+                "logo": silo0Logo["large"]
             },
             "silo1": {
                 "market": item["silo1"]["symbol"],
@@ -122,7 +124,8 @@ def get_silo_pools(tokens: str = None) -> dict:
                 "token1": item["silo0"]["symbol"],
                 "max_ltv": int(item["silo1"]["maxLtv"]) / 10**18,
                 "lt": int(item["silo1"]["lt"]) / 10**18,
-                "liquidity": int(item["silo1"]["liquidity"]) / 10**(item["silo1"]["decimals"])
+                "liquidity": int(item["silo1"]["liquidity"]) / 10**(item["silo1"]["decimals"]),
+                "logo": silo1Logo["large"]
             }
         })
     
@@ -421,6 +424,7 @@ class SiloPoolsTool(BaseTool):
             return f"Error getting Silo pools: {str(e)}"
 
 class SiloLoopingStrategyTool(BaseTool):
+    return_direct: bool = True
     name: str = "silo_looping_opportunities"
     description: str = """
     silo_looping_opportunities: Find optimal yield farming strategies through Silo deposit-borrow loops.
@@ -510,6 +514,8 @@ class SiloLoopingStrategyTool(BaseTool):
                 # Convert APR strings to floats properly
                 deposit_apr = float(silo0.get("deposit_apr", "0%").rstrip("%"))
                 borrow_apr = float(silo1.get("borrow_apr", "0%").rstrip("%"))
+                deposit_token_logo = silo0.get("logo")
+                borrow_token_logo = silo1.get("logo")
                 # Get liquidity (max borrowable amount)
                 liquidity = silo1.get("liquidity", 0)
                 if deposit_apr > borrow_apr:
@@ -526,6 +532,8 @@ class SiloLoopingStrategyTool(BaseTool):
                             "verified": is_verified,
                             "deposit_token": token0,
                             "borrow_token": token1,
+                            "deposit_token_logo": deposit_token_logo,
+                            "borrow_token_logo": borrow_token_logo,
                             "deposit_apr": deposit_apr,
                             "borrow_apr": borrow_apr,
                             "apr_spread": spread,
@@ -544,6 +552,8 @@ class SiloLoopingStrategyTool(BaseTool):
                 # Convert APR strings to floats properly
                 deposit_apr = float(silo1.get("deposit_apr", "0%").rstrip("%"))
                 borrow_apr = float(silo0.get("borrow_apr", "0%").rstrip("%"))
+                deposit_token_logo = silo1.get("logo")
+                borrow_token_logo = silo0.get("logo")
                 # Get liquidity (max borrowable amount)
                 liquidity = silo0.get("liquidity", 0)
                 
@@ -562,6 +572,8 @@ class SiloLoopingStrategyTool(BaseTool):
                             "verified": is_verified,
                             "deposit_token": token0,
                             "borrow_token": token1,
+                            "deposit_token_logo": deposit_token_logo,
+                            "borrow_token_logo": borrow_token_logo,
                             "deposit_apr": deposit_apr,
                             "borrow_apr": borrow_apr,
                             "apr_spread": spread,
@@ -592,6 +604,8 @@ class SiloLoopingStrategyTool(BaseTool):
             "deposit_token": opportunity["deposit_token"],
             "borrow_token": opportunity["borrow_token"],
             "strategy_overview": {
+                "deposit_token_logo": opportunity["deposit_token_logo"],
+                "borrow_token_logo": opportunity["borrow_token_logo"],
                 "deposit_apr": f"{opportunity['deposit_apr']:.2f}%",
                 "borrow_apr": f"{opportunity['borrow_apr']:.2f}%",
                 "spread": f"{opportunity['apr_spread']:.2f}%",
@@ -599,13 +613,13 @@ class SiloLoopingStrategyTool(BaseTool):
                 "max_leverage": f"{opportunity['max_leverage']:.2f}x",
                 "max_yield": f"{opportunity['max_yield']:.2f}% APR",
                 "initial_investment": f"${opportunity['initial_amount']:.2f}",
-                "available_liquidity": f"${opportunity['available_liquidity']:.2f}"
+                "available_liquidity": f"{opportunity['available_liquidity']:.2f}"
             },
             "execution_steps": [
-                f"1. Deposit {opportunity['deposit_token']} on Silo",
-                f"2. Borrow {opportunity['borrow_token']}",
-                f"3. Swap {opportunity['borrow_token']} for {opportunity['deposit_token']}",
-                "4. Repeat steps 1-3 for desired leverage (see yield table)"
+                f"Deposit {opportunity['deposit_token']} on Silo",
+                f"Borrow {opportunity['borrow_token']}",
+                f"Swap {opportunity['borrow_token']} for {opportunity['deposit_token']}",
+                "Repeat steps 1-3 for desired leverage (see yield table)"
             ],
             "yield_table": []
         }
@@ -626,7 +640,7 @@ class SiloLoopingStrategyTool(BaseTool):
             "Market volatility can increase liquidation risk at higher leverage",
             "APRs may change over time based on market conditions",
             f"Consider maintaining a buffer below maximum leverage for safety",
-            f"Available liquidity(represented by the token amount) of {opportunity['available_liquidity']:.2f} {opportunity['borrow_token']} limits maximum borrowing"
+            f"Available liquidity of {opportunity['available_liquidity']:.2f} {opportunity['borrow_token']} limits maximum borrowing"
         ]
         
         return strategy
@@ -647,7 +661,7 @@ class SiloLoopingStrategyTool(BaseTool):
                 return "No profitable looping strategies found with the current parameters."
             
             result = {
-                "message": f"Output is based on initial investment of ${initial_amount:.2f} and max {max_loops} loops",
+                "message": f"Output is based on initial investment of ${initial_amount:.2f} and maximum {max_loops} loops",
                 "strategies_count": len(opportunities),
                 "initial_amount": initial_amount,
                 "filtered_token": token,

@@ -5,7 +5,7 @@ import faiss
 import asyncio
 import functools
 
-from typing import Dict, Any, Annotated, Optional, AsyncGenerator, Callable
+from typing import Dict, Any, Annotated, Optional, AsyncGenerator, Callable, Literal
 from typing_extensions import TypedDict
 from dotenv import load_dotenv, set_key
 from langchain.schema import HumanMessage, AIMessage, SystemMessage
@@ -191,18 +191,30 @@ class LLMBaseConnection(BaseConnection):
             except Exception as e:
                 logger.error(f"Error in route_tools: {str(e)}")
                 return {"selected_tools": list(self.tool_registry.keys())}
-
+        should_return_direct = {tool.name for tool in self.tools if getattr(tool, 'return_direct', False)}
+        
         graph_builder = StateGraph(State)
         graph_builder.add_node("chatbot", chatbot)
         graph_builder.add_node("route_tools", route_tools)
         tool_node = ToolNode(tools=self.tools)
         graph_builder.add_node("tools", tool_node)
-        graph_builder.add_conditional_edges(
-            "chatbot", tools_condition, path_map=["tools", "__end__"])
-        graph_builder.add_edge("tools", "chatbot")
+        graph_builder.add_conditional_edges("chatbot", tools_condition, path_map=["tools", "__end__"])
         graph_builder.add_edge("route_tools", "chatbot")
-        graph_builder.add_edge(START, "route_tools")
 
+        def route_tool_responses(state: State) -> Literal["chatbot", "__end__"]:
+            for msg in reversed(state["messages"]):
+                if not isinstance(msg, ToolMessage):
+                    break
+                if msg.name in should_return_direct:
+                    return "__end__"
+            return "chatbot"
+
+        if should_return_direct:
+            graph_builder.add_conditional_edges("tools", route_tool_responses)
+        else:
+            graph_builder.add_edge("tools", "chatbot")
+
+        graph_builder.add_edge(START, "route_tools")
         return graph_builder
 
     def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -448,6 +460,8 @@ When using tools:
                 state = await self.graph_builder.compile(checkpointer=checkpointer).aget_state(config=config)
                 messages = state.values.get("messages", [])
                 i = 0
+                should_return_direct = {tool.name for tool in self.tools if getattr(tool, 'return_direct', False)}
+                
                 for message in messages:
                     if isinstance(message, HumanMessage) and "Input: " in message.content:
                         content = message.content
@@ -469,6 +483,17 @@ When using tools:
                             "sender": sender
                         })
                         i += 1
+                    elif isinstance(message, ToolMessage):
+                        if message.name in should_return_direct:
+                            content = message.content
+                            sender = "bot"
+
+                            formatted_messages.append({
+                                "id": i,
+                                "text": content,
+                                "sender": sender
+                            })
+                            i += 1
             return formatted_messages
 
         except Exception as e:

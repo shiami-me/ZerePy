@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger("tools.beets_tools")
 
 class BeetsSwapTool(BaseTool):
-    return_direct: bool =True
     name: str = "beets_swap"
     description: str = """
     beets_swap: Swap tokens using Beets (Balancer)
@@ -91,7 +90,6 @@ class AddLiquidityInput(BaseModel):
 
 
 class BeetsAddLiquidityTool(BaseTool):
-    return_direct: bool = True
     name: str = "beets_add_liquidity"
     description: str = """
     beets_add_liquidity: Add liquidity to a Beets pool
