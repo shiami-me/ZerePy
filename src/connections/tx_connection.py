@@ -390,7 +390,6 @@ class TxConnection(BaseConnection):
                 
         except Exception as e:
             logger.error(f"Failed to get token balances: {str(e)}")
-            logger.error(traceback.format_exc())
             raise TxConnectionError(f"Failed to get token balances: {str(e)}")
 
     def perform_action(self, action_name: str, kwargs) -> Any:

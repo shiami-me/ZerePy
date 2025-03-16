@@ -1,8 +1,7 @@
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from langgraph.graph import MessagesState
-from langgraph.prebuilt import create_react_agent
-from src.tools.price_tools import CryptoPricePredictionTool, GetTokenPriceTool
+from src.tools.price_tools import GetTokenPriceTool
 from ..utils.vector_store_utils import VectorStoreUtils
 from ..utils.create_agent import Agent
 
@@ -14,7 +13,7 @@ class PriceAgent:
     
     def __init__(self, llm, name: str, prompt: str, next: str):
         self._name = name
-        self.price_tools = [CryptoPricePredictionTool(), GetTokenPriceTool()]
+        self.price_tools = [GetTokenPriceTool()]
         self.price_agent = Agent(
             tools=self.price_tools,
             vector_store=VectorStoreUtils(tools=self.price_tools),

@@ -64,6 +64,7 @@ class Shiami:
             " if some agent doesn't do it's task well, ask to redo. and if some agent replies with anything that is the job of other agent then retry by refining the prompt specific to that agent."
             f" Here's some info for your current task: {prompt}"
             f" Prompts for workers: {prompts}"
+            f" Don't try to use scheduler unless you are asked to. Use it only if there's a mention of some time at which the task should be done in intervals or at a specific time of the day."
         )
         self._data = data
         self._llm = llm
