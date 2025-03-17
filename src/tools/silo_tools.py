@@ -107,6 +107,10 @@ def get_silo_pools(tokens: str = None) -> dict:
                 "market": item["silo0"]["symbol"],
                 "deposit_apr": f"{(float(item['silo0']['collateralBaseApr']) / 10**18) * 100:.2f}%",
                 "borrow_apr": f"{(float(item['silo0']['debtBaseApr']) / 10**18) * 100:.2f}%",
+                "debt_programs": item["silo0"]["debtPrograms"],
+                "collateral_programs": item["silo0"]["collateralPrograms"],
+                "collateral_points": item["silo0"]["collateralPoints"],
+                "debt_points": item["silo0"]["debtPoints"],
                 "isBorrowable": not item["silo0"]["isNonBorrowable"],
                 "token0": item["silo0"]["symbol"],
                 "token1": item["silo1"]["symbol"],
@@ -119,6 +123,10 @@ def get_silo_pools(tokens: str = None) -> dict:
                 "market": item["silo1"]["symbol"],
                 "deposit_apr": f"{(float(item['silo1']['collateralBaseApr']) / 10**18) * 100:.2f}%",
                 "borrow_apr": f"{(float(item['silo1']['debtBaseApr']) / 10**18) * 100:.2f}%",
+                "debt_programs": item["silo1"]["debtPrograms"],
+                "collateral_programs": item["silo1"]["collateralPrograms"],
+                "collateral_points": item["silo1"]["collateralPoints"],
+                "debt_points": item["silo1"]["debtPoints"],
                 "isBorrowable": not item["silo1"]["isNonBorrowable"],
                 "token0": item["silo1"]["symbol"],
                 "token1": item["silo0"]["symbol"],
@@ -511,9 +519,22 @@ class SiloLoopingStrategyTool(BaseTool):
             if silo1.get("isBorrowable", False):
                 token0 = silo0.get("market")  # Use market as token symbol
                 token1 = silo1.get("market")  # Use market as token symbol
-                # Convert APR strings to floats properly
-                deposit_apr = float(silo0.get("deposit_apr", "0%").rstrip("%"))
-                borrow_apr = float(silo1.get("borrow_apr", "0%").rstrip("%"))
+                # For deposit APR
+                collateral_base_apr = float(silo0.get("deposit_apr", "0%").rstrip("%"))  # string -> float
+                collateral_programs_apr = sum(
+                    (float(program.get('apr', '0')) / 10**16) for program in silo0.get('collateral_programs', [])
+                )
+
+                deposit_apr = (collateral_base_apr + collateral_programs_apr)
+
+                # For borrow APR
+                debt_base_apr = float(silo1.get("borrow_apr", "0%").rstrip("%"))
+                debt_programs_apr = sum(
+                    (float(program.get('apr', '0')) / 10**16) for program in silo1.get('debt_programs', [])
+                )
+
+                borrow_apr = (debt_base_apr + debt_programs_apr)
+
                 deposit_token_logo = silo0.get("logo")
                 borrow_token_logo = silo1.get("logo")
                 # Get liquidity (max borrowable amount)
@@ -532,6 +553,12 @@ class SiloLoopingStrategyTool(BaseTool):
                             "verified": is_verified,
                             "deposit_token": token0,
                             "borrow_token": token1,
+                            "debt_base_apr": debt_base_apr,
+                            "collateral_base_apr": collateral_base_apr,
+                            "collateral_programs": silo0.get("collateral_programs"),
+                            "debt_programs": silo1.get("debt_programs"),
+                            "collateral_points": silo0.get("collateral_points"),
+                            "debt_points": silo1.get("debt_points"),
                             "deposit_token_logo": deposit_token_logo,
                             "borrow_token_logo": borrow_token_logo,
                             "deposit_apr": deposit_apr,
@@ -549,9 +576,21 @@ class SiloLoopingStrategyTool(BaseTool):
             if silo0.get("isBorrowable", False):
                 token0 = silo1.get("market")  # Use market as token symbol
                 token1 = silo0.get("market")  # Use market as token symbol
-                # Convert APR strings to floats properly
-                deposit_apr = float(silo1.get("deposit_apr", "0%").rstrip("%"))
-                borrow_apr = float(silo0.get("borrow_apr", "0%").rstrip("%"))
+                # For deposit APR
+                collateral_base_apr = float(silo1.get("deposit_apr", "0%").rstrip("%"))  # string -> float
+                collateral_programs_apr = sum(
+                    (float(program.get('apr', '0')) / 10**16) for program in silo1.get('collateral_programs', [])
+                )
+                
+                deposit_apr = (collateral_base_apr + collateral_programs_apr)
+                
+                # For borrow APR
+                debt_base_apr = float(silo0.get("borrow_apr", "0%").rstrip("%"))
+                debt_programs_apr = sum(
+                    (float(program.get('apr', '0')) / 10**16) for program in silo0.get('debt_programs', [])
+                )
+                
+                borrow_apr = (debt_base_apr + debt_programs_apr)
                 deposit_token_logo = silo1.get("logo")
                 borrow_token_logo = silo0.get("logo")
                 # Get liquidity (max borrowable amount)
@@ -572,6 +611,12 @@ class SiloLoopingStrategyTool(BaseTool):
                             "verified": is_verified,
                             "deposit_token": token0,
                             "borrow_token": token1,
+                            "debt_base_apr": debt_base_apr,
+                            "collateral_base_apr": collateral_base_apr,
+                            "collateral_programs": silo1.get("collateral_programs"),
+                            "debt_programs": silo0.get("debt_programs"),
+                            "collateral_points": silo1.get("collateral_points"),
+                            "debt_points": silo0.get("debt_points"),
                             "deposit_token_logo": deposit_token_logo,
                             "borrow_token_logo": borrow_token_logo,
                             "deposit_apr": deposit_apr,
@@ -608,6 +653,12 @@ class SiloLoopingStrategyTool(BaseTool):
                 "borrow_token_logo": opportunity["borrow_token_logo"],
                 "deposit_apr": f"{opportunity['deposit_apr']:.2f}%",
                 "borrow_apr": f"{opportunity['borrow_apr']:.2f}%",
+                "collateral_programs": opportunity["collateral_programs"],
+                "debt_programs": opportunity["debt_programs"],
+                "collateral_points": opportunity["collateral_points"],
+                "debt_points": opportunity["debt_points"],
+                "debt_base_apr": f"{opportunity['debt_base_apr']:.2f}%",
+                "collateral_base_apr": f"{opportunity['collateral_base_apr']:.2f}%",
                 "spread": f"{opportunity['apr_spread']:.2f}%",
                 "best_loops": opportunity["best_loops"],
                 "max_leverage": f"{opportunity['max_leverage']:.2f}x",
