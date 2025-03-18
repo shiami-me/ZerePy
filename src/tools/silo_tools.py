@@ -494,7 +494,8 @@ class SiloLoopingStrategyTool(BaseTool):
                 "total_deposit": total_deposit,
                 "total_borrowed": total_borrowed,
                 "max_leverage": max_leverage,
-                "max_yield": max_yield * 100
+                "max_yield": max_yield * 100,
+                "ltv_used": max_ltv * 0.95
             })
         
         return results
@@ -569,7 +570,8 @@ class SiloLoopingStrategyTool(BaseTool):
                             "max_yield": best_loop["max_yield"],
                             "initial_amount": initial_amount,
                             "available_liquidity": liquidity,
-                            "loop_results": loop_results
+                            "loop_results": loop_results,
+                            "ltv_used": best_loop["ltv_used"]
                         })
             
             # Second direction: deposit silo1 token, borrow silo0 token
@@ -627,7 +629,8 @@ class SiloLoopingStrategyTool(BaseTool):
                             "max_yield": best_loop["max_yield"],
                             "initial_amount": initial_amount,
                             "available_liquidity": liquidity,
-                            "loop_results": loop_results
+                            "loop_results": loop_results,
+                            "ltv_used": best_loop["ltv_used"]
                         })
         
         # Sort opportunities by max yield (descending)
@@ -664,7 +667,8 @@ class SiloLoopingStrategyTool(BaseTool):
                 "max_leverage": f"{opportunity['max_leverage']:.2f}x",
                 "max_yield": f"{opportunity['max_yield']:.2f}% APR",
                 "initial_investment": f"${opportunity['initial_amount']:.2f}",
-                "available_liquidity": f"{opportunity['available_liquidity']:.2f}"
+                "available_liquidity": f"{opportunity['available_liquidity']:.2f}",
+                "ltv_used": f"{opportunity['ltv_used']:.2f}"
             },
             "execution_steps": [
                 f"Deposit {opportunity['deposit_token']} on Silo",
