@@ -22,6 +22,7 @@ from src.tools.silo_tools import get_silo_tools
 from src.tools.debridge_tools import get_debridge_tools
 from src.tools.beets_tools import get_beets_tools
 from src.tools.tx_tools import get_tx_tools
+from src.tools.pendle_tools import get_all_pendle_tools
 from src.connections.base_connection import BaseConnection, Action, ActionParameter
 from langgraph.types import Command, interrupt
 from langchain_community.docstore.in_memory import InMemoryDocstore
@@ -103,6 +104,9 @@ class LLMBaseConnection(BaseConnection):
             
             if "tx" in self.config.get("plugins", []):
                 self.tools.extend(get_tx_tools(self._agent))
+            
+            if "pendle" in self.config.get("plugins", []):
+                self.tools.extend(get_all_pendle_tools(self._agent))
 
             self.tool_registry = {str(i): tool for i, tool in enumerate(self.tools)}
 

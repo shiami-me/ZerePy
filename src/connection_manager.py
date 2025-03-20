@@ -10,6 +10,7 @@ from src.connections.debridge_connection import DebridgeConnection
 from src.connections.beets_connection import BeetsConnection
 from src.connections.tx_connection import TxConnection
 from src.connections.privy_connection import PrivyConnection
+from src.connections.pendle_connection import PendleConnection
 
 logger = logging.getLogger("connection_manager")
 
@@ -42,6 +43,8 @@ class ConnectionManager:
             return TxConnection
         elif class_name == "privy":
             return PrivyConnection
+        elif class_name == "pendle":
+            return PendleConnection
         return None
 
     def _register_connection(self, config_dic: Dict[str, Any]) -> None:
