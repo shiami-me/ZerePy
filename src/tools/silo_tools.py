@@ -4,6 +4,7 @@ import logging
 import requests
 from langchain.tools import BaseTool
 from .sonic_tools import SonicBalanceCheckTool
+from .pendle_tools import PendleMarketsInfoTool
 
 logger = logging.getLogger("tools.silo_tools")
 
@@ -476,7 +477,8 @@ class SiloLoopingStrategyTool(BaseTool):
                 # Calculate how much can be borrowed based on max LTV
                 borrow_capacity = total_deposit * max_ltv
                 borrowable_amount = borrow_capacity - total_borrowed
-                loop_amount = borrowable_amount * 0.95  # Apply safety factor
+                # loop_amount = borrowable_amount * 0.95  # Apply safety factor
+                loop_amount = borrowable_amount
                 if loop_amount <= 0:
                     break  # Stop looping if no more can be borrowed
                 
@@ -495,10 +497,36 @@ class SiloLoopingStrategyTool(BaseTool):
                 "total_borrowed": total_borrowed,
                 "max_leverage": max_leverage,
                 "max_yield": max_yield * 100,
-                "ltv_used": max_ltv * 0.95
+                "ltv_used": max_ltv
             })
         
         return results
+
+    def _get_pendle_market_implied_apy(self, token_name):
+        """Get the implied APY for a Pendle market PT token"""
+        try:
+            # Extract the base token name from PT token (e.g., 'PT-wstkscUSD (29 May)' -> 'wstkscUSD')
+            if '(' in token_name:
+                base_token = token_name.split('-')[1].split('(')[0].strip()
+            else:
+                base_token = token_name.split('-')[1].strip()
+                
+            # Get all Pendle markets
+            markets_info = json.loads(PendleMarketsInfoTool(self._agent)._run())
+            markets = markets_info.get('markets', [])
+            
+            # Look for a market with a matching token
+            for market in markets:
+                if base_token.lower() in market.get('market', '').lower():
+                    # Return the implied APY
+                    implied_apy = float(market.get('implied_apy', '0%').strip('%'))
+                    return implied_apy / 100  # Convert from percentage to decimal
+                    
+            # If no match found, return a default value
+            return 0.05  # Default 5% APY if not found
+        except Exception as e:
+            logger.error(f"Error fetching Pendle market data: {str(e)}")
+            return 0.05  # Default 5% APY if error occurs
 
     def _find_looping_opportunities(self, initial_amount=1000, token=None, limit=10, min_loops=2, max_loops=50):
         """Find and analyze looping opportunities across Silo markets."""
@@ -520,8 +548,18 @@ class SiloLoopingStrategyTool(BaseTool):
             if silo1.get("isBorrowable", False):
                 token0 = silo0.get("market")  # Use market as token symbol
                 token1 = silo1.get("market")  # Use market as token symbol
-                # For deposit APR
-                collateral_base_apr = float(silo0.get("deposit_apr", "0%").rstrip("%"))  # string -> float
+                is_pt_token = False
+                
+                # Check if this is a Pendle PT token
+                if token0.startswith("PT"):
+                    is_pt_token = True
+                    # Get implied APY for PT token from Pendle
+                    implied_apy = self._get_pendle_market_implied_apy(token0)
+                    collateral_base_apr = implied_apy * 100  # Convert to percentage for consistent usage
+                else:
+                    # Regular token - For deposit APR
+                    collateral_base_apr = float(silo0.get("deposit_apr", "0%").rstrip("%"))  # string -> float
+                
                 collateral_programs_apr = sum(
                     (float(program.get('apr', '0')) / 10**16) for program in silo0.get('collateral_programs', [])
                 )
@@ -571,15 +609,26 @@ class SiloLoopingStrategyTool(BaseTool):
                             "initial_amount": initial_amount,
                             "available_liquidity": liquidity,
                             "loop_results": loop_results,
-                            "ltv_used": best_loop["ltv_used"]
+                            "ltv_used": best_loop["ltv_used"],
+                            "is_pt_token": is_pt_token
                         })
             
             # Second direction: deposit silo1 token, borrow silo0 token
             if silo0.get("isBorrowable", False):
                 token0 = silo1.get("market")  # Use market as token symbol
                 token1 = silo0.get("market")  # Use market as token symbol
-                # For deposit APR
-                collateral_base_apr = float(silo1.get("deposit_apr", "0%").rstrip("%"))  # string -> float
+                is_pt_token = False
+                
+                # Check if this is a Pendle PT token
+                if token0.startswith("PT"):
+                    is_pt_token = True
+                    # Get implied APY for PT token from Pendle
+                    implied_apy = self._get_pendle_market_implied_apy(token0)
+                    collateral_base_apr = implied_apy * 100  # Convert to percentage for consistent usage
+                else:
+                    # Regular token - For deposit APR
+                    collateral_base_apr = float(silo1.get("deposit_apr", "0%").rstrip("%"))  # string -> float
+                
                 collateral_programs_apr = sum(
                     (float(program.get('apr', '0')) / 10**16) for program in silo1.get('collateral_programs', [])
                 )
@@ -630,7 +679,8 @@ class SiloLoopingStrategyTool(BaseTool):
                             "initial_amount": initial_amount,
                             "available_liquidity": liquidity,
                             "loop_results": loop_results,
-                            "ltv_used": best_loop["ltv_used"]
+                            "ltv_used": best_loop["ltv_used"],
+                            "is_pt_token": is_pt_token
                         })
         
         # Sort opportunities by max yield (descending)
@@ -645,12 +695,50 @@ class SiloLoopingStrategyTool(BaseTool):
     
     def _format_strategy(self, opportunity):
         """Format a looping strategy into a readable output."""
+        is_pt_token = opportunity.get("is_pt_token", False)
+        
+        # Customize execution steps based on whether we're dealing with a PT token
+        if is_pt_token:
+            execution_steps = [
+                f"1. Get {opportunity['deposit_token']} from Pendle (swap or mint)",
+                f"2. Deposit {opportunity['deposit_token']} on Silo as collateral",
+                f"3. Borrow {opportunity['borrow_token']} against your {opportunity['deposit_token']} collateral",
+                f"4. Mint more {opportunity['deposit_token']} on Pendle using borrowed {opportunity['borrow_token']}",
+                "5. Repeat steps 2-5 for desired leverage (see yield table)"
+            ]
+            
+            risk_considerations = [
+                "Price impact and slippage may reduce actual yields",
+                "Market volatility can increase liquidation risk at higher leverage",
+                "APRs may change over time based on market conditions",
+                f"Consider maintaining a buffer below maximum leverage for safety",
+                f"Available liquidity of {opportunity['available_liquidity']:.2f} {opportunity['borrow_token']} limits maximum borrowing",
+                f"PT tokens have maturity dates - be aware of redemption timing",
+                f"Yield is partially derived from Pendle's implied APY, which can fluctuate"
+            ]
+        else:
+            execution_steps = [
+                f"1. Deposit {opportunity['deposit_token']} on Silo as collateral",
+                f"2. Borrow {opportunity['borrow_token']} against your {opportunity['deposit_token']} collateral",
+                f"3. Swap {opportunity['borrow_token']} for {opportunity['deposit_token']}",
+                "4. Repeat steps 1-3 for desired leverage (see yield table)"
+            ]
+            
+            risk_considerations = [
+                "Price impact and slippage may reduce actual yields",
+                "Market volatility can increase liquidation risk at higher leverage",
+                "APRs may change over time based on market conditions",
+                f"Consider maintaining a buffer below maximum leverage for safety",
+                f"Available liquidity of {opportunity['available_liquidity']:.2f} {opportunity['borrow_token']} limits maximum borrowing"
+            ]
+        
         strategy = {
             "market_id": opportunity["market_id"],
             "market": opportunity["market_name"],
             "verified": opportunity["verified"],
             "deposit_token": opportunity["deposit_token"],
             "borrow_token": opportunity["borrow_token"],
+            "is_pt_token": is_pt_token,
             "strategy_overview": {
                 "deposit_token_logo": opportunity["deposit_token_logo"],
                 "borrow_token_logo": opportunity["borrow_token_logo"],
@@ -670,12 +758,7 @@ class SiloLoopingStrategyTool(BaseTool):
                 "available_liquidity": f"{opportunity['available_liquidity']:.2f}",
                 "ltv_used": f"{opportunity['ltv_used']:.2f}"
             },
-            "execution_steps": [
-                f"Deposit {opportunity['deposit_token']} on Silo",
-                f"Borrow {opportunity['borrow_token']}",
-                f"Swap {opportunity['borrow_token']} for {opportunity['deposit_token']}",
-                "Repeat steps 1-3 for desired leverage (see yield table)"
-            ],
+            "execution_steps": execution_steps,
             "yield_table": []
         }
         
@@ -690,13 +773,7 @@ class SiloLoopingStrategyTool(BaseTool):
             })
         
         # Add risk considerations
-        strategy["risk_considerations"] = [
-            "Price impact and slippage may reduce actual yields",
-            "Market volatility can increase liquidation risk at higher leverage",
-            "APRs may change over time based on market conditions",
-            f"Consider maintaining a buffer below maximum leverage for safety",
-            f"Available liquidity of {opportunity['available_liquidity']:.2f} {opportunity['borrow_token']} limits maximum borrowing"
-        ]
+        strategy["risk_considerations"] = risk_considerations
         
         return strategy
     
@@ -715,13 +792,17 @@ class SiloLoopingStrategyTool(BaseTool):
             if not opportunities:
                 return "No profitable looping strategies found with the current parameters."
             
+            # Count how many PT token strategies we found
+            pt_strategies_count = sum(1 for opp in opportunities if opp.get("is_pt_token", False))
+            
             result = {
                 "message": f"Output is based on initial investment of ${initial_amount:.2f} and maximum {max_loops} loops",
                 "strategies_count": len(opportunities),
+                "pt_strategies_count": pt_strategies_count,
                 "initial_amount": initial_amount,
                 "filtered_token": token,
                 "strategies": [self._format_strategy(opp) for opp in opportunities],
-                "note": "The outputs only consider the base APR, for any additional rewards check https://v2.silo.finance/"
+                "note": "The outputs only consider the base APR, for any additional rewards check https://v2.silo.finance/. For PT token strategies, yield is partially derived from Pendle's implied APY."
             }
             
             return json.dumps(result, indent=2)
