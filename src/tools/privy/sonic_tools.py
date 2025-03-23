@@ -20,10 +20,9 @@ class SonicSwapToolPrivy(SonicSwapTool):
     - amount: amount to swap
     - sender: Your wallet address
     - slippage: slippage tolerance (optional) Default - 0.5
-    - return_tx_only: If true, only return transaction data without executing (optional)
     """
     
-    def _run(self, from_token: str, to_token: str, amount: float, sender: str, slippage: float = 0.5, return_tx_only: bool = False):
+    def _run(self, from_token: str, to_token: str, amount: float, sender: str, slippage: float = 0.5):
         try:
             swap_params = {"amount": float(amount), "sender": sender, "slippage": float(slippage)}
 
@@ -33,7 +32,7 @@ class SonicSwapToolPrivy(SonicSwapTool):
             else:
                 from_token_lookup = json.loads(SonicTokenLookupTool(self._agent)._run(from_token))
                 if "error" in from_token_lookup:
-                    return json.dumps({"error": f"Invalid from_token {from_token}"})
+                    return ({"error": f"Invalid from_token {from_token}"})
                 swap_params["token_in"] = from_token_lookup["address"]
 
             # Handle to_token
@@ -42,7 +41,7 @@ class SonicSwapToolPrivy(SonicSwapTool):
             else:
                 to_token_lookup = json.loads(SonicTokenLookupTool(self._agent)._run(to_token))
                 if "error" in to_token_lookup:
-                    return json.dumps({"error": f"Invalid to_token {to_token}"})
+                    return ({"error": f"Invalid to_token {to_token}"})
                 swap_params["token_out"] = to_token_lookup["address"]
             
             logger.info(f"Getting swap summary for {amount} {from_token} to {to_token}")
@@ -55,48 +54,41 @@ class SonicSwapToolPrivy(SonicSwapTool):
             )
             
             if "amountIn" not in route_summary or "amountOut" not in route_summary:
-                return json.dumps({"error": "Could not get valid swap quote"})
+                return ({"error": "Could not get valid swap quote"})
             
             router_address = route_summary.get("routerAddress")
             if not router_address:
-                return json.dumps({"error": "Missing router address in swap summary"})
+                return ({"error": "Missing router address in swap summary"})
                 
             # Initialize web3 connection
             w3 = Web3(Web3.HTTPProvider("http://localhost:8545"))
             
             # Format amounts for approval
             amount_in_wei = int(route_summary["amountIn"])
-            amount_out = int(route_summary["amountOut"])
-            
-            # Prepare the transactions array for multicall
-            transactions = []
             
             # Handle approval if not native token (Sonic)
             approval_result = None
-            approval_tx_data = None
             if from_token.upper() != "S":
                 # Check if token needs approval
                 token_contract = w3.eth.contract(address=swap_params["token_in"], abi=ERC20_ABI)
                 current_allowance = token_contract.functions.allowance(sender, router_address).call()
                 
                 if current_allowance < amount_in_wei:
-                    logger.info(f"Preparing approval for {from_token}. Current allowance: {current_allowance}, Required: {amount_in_wei}")
+                    logger.info(f"Approving {from_token} for swap. Current allowance: {current_allowance}, Required: {amount_in_wei}")
                     
-                    # Build approval transaction data
-                    approval_tx_data = token_contract.functions.approve(
-                        router_address, amount_in_wei
-                    ).build_transaction({
-                        'from': sender,
-                        'nonce': w3.eth.get_transaction_count(sender),
-                        'gas': 200000,
-                        'gasPrice': w3.eth.gas_price
-                    })['data']
+                    # Execute token approval
+                    approval_result = approve_token(
+                        self._agent.connection_manager.connections["privy"],
+                        swap_params["token_in"], router_address, amount_in_wei, sender
+                    )
                     
-                    transactions.append({
-                        "to": swap_params["token_in"],
-                        "data": approval_tx_data,
-                        "value": 0
-                    })
+                    if "error" in approval_result:
+                        return ({"error": approval_result["error"]})
+                    
+                    if not approval_result.get("success", False):
+                        return ({"error": "Token approval transaction failed", "tx_hash": approval_result.get("tx_hash")})
+                    
+                    logger.info(f"Token approval successful: {approval_result.get('tx_hash')}")
             
             # Now get the actual swap transaction data
             try:
@@ -108,37 +100,15 @@ class SonicSwapToolPrivy(SonicSwapTool):
                 
                 # The swap-sonic action returns the transaction data, not the actual transaction
                 if not swap_tx:
-                    return json.dumps({"error": "Failed to generate swap transaction data"})
+                    return ({"error": "Failed to generate swap transaction data"})
                 
                 # Check if there's an error message
-                if isinstance(swap_tx, str) and "error" in swap_tx.lower():
-                    return json.dumps({"error": swap_tx})
-                
-                # Add the swap transaction
-                transactions.append({
-                    "to": swap_tx["to"],
-                    "data": swap_tx["data"],
-                    "value": 0 if from_token.upper() != "S" else amount_in_wei
-                })
+                if isinstance(swap_tx, str):
+                    return ({"error": swap_tx})
                 
             except Exception as e:
                 logger.error(f"Failed to generate swap transaction: {str(e)}")
-                return json.dumps({"error": f"Failed to generate swap transaction: {str(e)}"})
-            
-            # If return_tx_only is True, just return the transaction data without executing
-            if return_tx_only:
-                return json.dumps({
-                    "type": "swap_transaction_details",
-                    "from_token": from_token,
-                    "to_token": to_token,
-                    "amount_in": amount,
-                    "amount_in_wei": amount_in_wei,
-                    "amount_out": float(amount_out) / (10 ** 18),  # Approximate conversion
-                    "amount_out_wei": amount_out,
-                    "slippage": slippage,
-                    "transactions": transactions,
-                    "route_summary": route_summary
-                })
+                return ({"error": f"Failed to generate swap transaction: {str(e)}"})
             
             # Execute the swap transaction with Privy
             auth_message = f"I authorize swapping {amount} {from_token} tokens for {to_token}"
@@ -153,12 +123,14 @@ class SonicSwapToolPrivy(SonicSwapTool):
             )
             
             if "error" in swap_result:
-                return json.dumps({"error": swap_result["error"]})
+                return ({"error": swap_result["error"]})
             
             # Format route summary for response
             route_summary["amountIn"] = str(int(route_summary["amountIn"]))
             route_summary["amountOut"] = str(int(route_summary["amountOut"]))
+            token_contract = w3.eth.contract(address=swap_params["token_out"], abi=ERC20_ABI)
             
+            decimals = token_contract.functions.decimals().call()
             # Build result in the same format as the original SonicSwapTool
             result = {
                 "status": "success",
@@ -166,7 +138,7 @@ class SonicSwapToolPrivy(SonicSwapTool):
                 "from_token": from_token,
                 "to_token": to_token,
                 "amount_in": amount,
-                "amount_out": float(route_summary["amountOut"]) / (10 ** 18),  # Approximate conversion
+                "amount_out": float(route_summary["amountOut"]) / (10 ** int(decimals)),  # Approximate conversion
                 "slippage": slippage,
                 "tx": swap_result.get("tx_hash"),
                 "details": swap_params,
@@ -186,11 +158,11 @@ class SonicSwapToolPrivy(SonicSwapTool):
                     "gas_stats": approval_result.get("gas_stats")
                 }
             
-            return json.dumps(result)
+            return (result)
             
         except Exception as e:
             logger.error(f"Error in Privy Sonic swap: {str(e)}")
-            return json.dumps({"error": f"Swap failed: {str(e)}"})
+            return ({"error": f"Swap failed: {str(e)}"})
 
 def get_privy_sonic_tools(agent, llm) -> list:
     """Return a list of all Privy Sonic-related tools."""

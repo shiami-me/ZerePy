@@ -79,7 +79,7 @@ class SonicConnection(BaseConnection):
                 return "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
             
             if ticker.lower() in ["usdc", "usdce", "usd"]:
-                return "0x29219dd400f2bf60e5a23d13be72b486d4038894"
+                return "0x29219dd400f2Bf60E5a23d13Be72B486D4038894"
             if ticker.lower() in ["eth", "weth"]:
                 return "0x50c42deacd8fc9773493ed674b675be577f2634b"
             response = requests.get(

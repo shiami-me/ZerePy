@@ -91,6 +91,17 @@ class SiloConnection(BaseConnection):
                 ActionParameter(name='decimals', type=int, required=False, description='Decimals of the token')
             ]
         )
+        self.actions['borrow-shares'] = Action(
+            name='borrow-shares',
+            description='Borrow assets from Silo',
+            parameters=[
+                ActionParameter(name='silo_address', type=str, required=True, description='Address of the Silo contract'),
+                ActionParameter(name='amount', type=float, required=True, description='Amount to borrow'),
+                ActionParameter(name='sender', type=str, required=True, description='Address of the sender'),
+                ActionParameter(name='receiver', type=str, required=False, description='Address to receive the borrowed assets'),
+                ActionParameter(name='decimals', type=int, required=False, description='Decimals of the token')
+            ]
+        )
 
         self.actions['repay'] = Action(
             name='repay',
@@ -274,6 +285,7 @@ class SiloConnection(BaseConnection):
                 'gas': 500000,  # Estimated gas limit
                 'nonce': self.web3.eth.get_transaction_count(sender)
             })
+            tx["amount"] = amount_wei
             return tx
             
             # TODO ADD MORE CHECKS LIKE LIQUIDTIY
@@ -282,7 +294,64 @@ class SiloConnection(BaseConnection):
             raise SiloConnectionError(f"Contract error during borrow: {str(e)}")
         except Exception as e:
             raise SiloConnectionError(f"Failed to borrow: {str(e)}")
+    def borrow_shares(self, silo_address: str, amount: float, sender: str,
+                    receiver: str = None, decimals: int = 18) -> Dict:
+        """
+        Borrow assets from a Silo
+        
+        Args:
+            silo_address: Address of the Silo contract
+            amount: Amount to borrow
+            receiver: Address to receive the borrowed assets
+            sender: Address of the sender
+            
+        Raises:
+            SiloConnectionError: If borrow is not possible due to:
+                - Zero amount (InputZeroShares)
+                - Above max LTV limit (AboveMaxLtv) 
+                - Not enough liquidity (NotEnoughLiquidity)
+                - Account not solvent
+                - Borrow not possible for other reasons
+        """
+        if amount == 0:
+            raise SiloConnectionError("InputZeroShares: Cannot borrow zero amount")
+        # Get Silo contract
+        silo_contract = self.web3.eth.contract(
+            address=silo_address,
+            abi=self.silo_abi
+        )
 
+        if not self.is_configured():
+            raise SiloConnectionError("Silo connection not properly configured")
+
+        # Check if account is solvent
+        if not silo_contract.functions.isSolvent(sender).call():
+            raise SiloConnectionError("Account is not solvent")
+
+        # Convert amount to Wei
+        amount_wei = int(amount * (10**decimals))
+        receiver = receiver or sender
+        try:
+            # Build transaction
+            tx = silo_contract.functions.borrowShares(
+                amount_wei,
+                receiver,
+                sender
+            ).build_transaction({
+                'from': sender,
+                'gas': 500000,  # Estimated gas limit
+                'nonce': self.web3.eth.get_transaction_count(sender)
+            })
+            tx["amount"] = amount_wei
+            return tx
+            
+            # TODO ADD MORE CHECKS LIKE LIQUIDTIY
+            
+        except ContractLogicError as e:
+            raise SiloConnectionError(f"Contract error during borrow: {str(e)}")
+        except Exception as e:
+            raise SiloConnectionError(f"Failed to borrow: {str(e)}")
+    
     def borrow_same_asset(self, silo_address: str, amount: float, sender: str,
                           receiver: str = None, decimals: int = 18) -> Dict:
         """
@@ -402,7 +471,7 @@ class SiloConnection(BaseConnection):
                     sender
                 )
             })
-            
+            tx["amount"] = amount_wei
             return tx
             
         except ContractLogicError as e:

@@ -5,6 +5,13 @@ import logging
 from web3 import Web3
 from src.constants.abi import ERC20_ABI, SILO_ABI
 from .helpers import approve_token, execute
+from decimal import Decimal, ROUND_FLOOR, getcontext
+
+def ceil_to_8_decimal(number):
+    getcontext().prec = 10 
+    d = Decimal(str(number))
+    result = d.quantize(Decimal('0.00000001'), rounding=ROUND_FLOOR)
+    return float(result)
 
 logger = logging.getLogger("tools.privy.silo_tools")
 
@@ -31,19 +38,6 @@ MULTICALL_ABI = [
 ]
 
 class SiloDepositToolPrivy(SiloDepositTool):
-    description: str = """
-    privy_silo_deposit: Deposit tokens into a Silo smart contract using Privy wallet.
-    Ex - deposit Collateral 1000 USDC into Sonic/USDC pair. Then token_0: USDC, token_1: Sonic, collateral_type: 1 (collateral), amount: 1000.0, sender: "0xYourWalletAddress"
-        deposit Protected 100 Sonic into Sonic/USDC pair. Then token_0: Sonic, token_1: USDC, collateral_type: 0 (protected), amount: 100.0, sender: "0xYourWalletAddress"
-    Args:
-        token_0: Symbol of the token to deposit
-        token_1: Symbol of the other token in the Silo pair
-        amount: Amount of assets to deposit
-        collateral_type: Type of collateral (0 for Protected, 1 for Collateral)
-        sender: Address of the sender
-        id: Optional market ID to specify a specific market
-        return_tx_only: If true, only return transaction data without executing (optional)
-    """
     
     def _run(self, token_0: str, token_1: str, amount: float,
              collateral_type: int = 0, sender: str = None, id: int = None, return_tx_only: bool = False):
@@ -165,20 +159,6 @@ class SiloDepositToolPrivy(SiloDepositTool):
             return {"error": f"Deposit failed: {str(e)}"}
 
 class SiloBorrowToolPrivy(SiloBorrowTool):
-    description: str = """
-    privy_silo_borrow: Borrow tokens from a Silo smart contract using Privy wallet.
-    Ex - borrow 1000 USDC from Sonic/USDC pair. Then token_0: USDC, token_1: Sonic, amount: 1000.0, sender: "0xYourWalletAddress"
-        borrow 100 Sonic from Sonic/USDC pair. Then token_0: Sonic, token_1: USDC, amount: 100.0, sender: "0xYourWalletAddress"
-    Args:
-        token_0: Symbol of the token to borrow
-        token_1: Symbol of the other token in the Silo pair
-        amount: Amount of tokens to borrow
-        sender: Address of the sender
-        receiver: Address to receive the borrowed assets (optional, defaults to sender)
-        id: Optional market ID to specify a specific market
-        return_tx_only: If true, only return transaction data without executing (optional)
-    """
-    
     def _run(self, token_0: str, token_1: str, amount: float,
              sender: str, receiver: str = None, id: int = None, return_tx_only: bool = False):
         try:
@@ -329,23 +309,6 @@ class SiloBorrowSharesToolPrivy(SiloBorrowSharesTool):
             return {"error": f"Borrow failed: {str(e)}"}
 
 class SiloLoopingStrategyToolPrivy(SiloLoopingStrategyTool):
-    name: str = "privy_silo_looping_execute"
-    description: str = """
-    privy_silo_looping_execute: Execute a Silo looping strategy in a single transaction using multicall.
-    
-    This tool takes a looping strategy (deposit-borrow-swap loop) and executes it in a single transaction,
-    optimizing for the best yield by borrowing 95% of available credit after each deposit.
-    
-    Ex - execute looping strategy for Sonic/USDC with 1000 USDC. Then token: "USDC,S", initial_amount: 1000, sender: "0xYourAddress"
-        execute S/USDC optimized looping strategy. Then token: "S,USDC", initial_amount: 500, loops: 3, sender: "0xYourAddress"
-    
-    Args:
-        token: Comma-separated tokens for the market (e.g. "USDC,S")
-        initial_amount: Initial capital to start the loop with
-        sender: Your wallet address
-        loops: Number of loops to execute (default: 3)
-        borrow_percentage: Percentage of max borrow to use in each loop (default: 95)
-    """
     
     def _run(self, token: str, initial_amount: float, sender: str, 
              loops: int = 3, borrow_percentage: float = 95) -> str:
@@ -359,197 +322,230 @@ class SiloLoopingStrategyToolPrivy(SiloLoopingStrategyTool):
             
             logger.info(f"Executing looping strategy for {token_0}/{token_1} with initial amount {initial_amount}")
             
-            silo_config_address, is_token0_silo0, _, decimals0 = get_silo_config_address(token_0, token_1)
-            _, _, _, decimals1 = get_silo_config_address(token_1, token_0)
-            token_idx = 0 if is_token0_silo0 else 1
-            silo0_address = self._agent.connection_manager.connections["silo"]._get_silo_address(silo_config_address, token_idx)
-            
-            silo1_address = self._agent.connection_manager.connections["silo"]._get_silo_address(silo_config_address, 1 - token_idx)
-            w3 = Web3(Web3.HTTPProvider("http://localhost:8545"))
-            silo0_contract = w3.eth.contract(address=silo0_address, abi=SILO_ABI)
-            silo1_contract = w3.eth.contract(address=silo1_address, abi=SILO_ABI)
-            # Get tokens and market details
-            deposit_token = token_0  # We'll deposit the first token
-            borrow_token = token_1   # And borrow the second token
-            
-            # Now build the transaction sequence
-            multicall_transactions = []
-            current_amount = initial_amount
-            value = 0
-            deposit_shares = silo0_contract.functions.previewDeposit(int(initial_amount*(10**decimals0)), 1).call()
-            # For the initial deposit
-            deposit_result = SiloDepositToolPrivy(self._agent, "")._run(
-                token_0=deposit_token,
-                token_1=borrow_token,
-                amount=current_amount,
-                collateral_type=1,  # Collateral
-                sender=sender,
-                return_tx_only=True
-            )
-            
-            deposit_result = json.loads(deposit_result) if isinstance(deposit_result, str) else deposit_result
-            
-            if "error" in deposit_result:
-                return json.dumps({"error": f"Failed to prepare initial deposit: {deposit_result['error']}"})
-            
-            # Add deposit transactions to multicall
-            for tx in deposit_result["transactions"]:
-                multicall_transactions.append({
-                    "target": tx["to"],
-                    "callData": tx["data"]
-                })
+            # Get Silo config and token information
+            try:
+                silo_config_result = get_silo_config_address(token_0, token_1)
+                if isinstance(silo_config_result, dict) and "error" in silo_config_result:
+                    return json.dumps({"error": f"Failed to get market configuration: {silo_config_result['error']}"})
+                
+                silo_config_address, is_token0_silo0, deposit_token_address, decimals0 = silo_config_result
+                _, _, _, decimals1 = get_silo_config_address(token_1, token_0)
+                
+                # Determine which token is collateral and which is borrowed
+                deposit_token = token_0
+                borrow_token = token_1
+                deposit_token_decimals = decimals0
+                borrow_token_decimals = decimals1
+                
+                logger.info(f"Deposit token: {deposit_token}, Decimals: {deposit_token_decimals}")
+                logger.info(f"Borrow token: {borrow_token}, Decimals: {borrow_token_decimals}")
+            except Exception as e:
+                logger.error(f"Error getting token information: {str(e)}")
+                return json.dumps({"error": f"Failed to get token information: {str(e)}"})
             
             # Store details for reporting
             looping_details = []
             total_borrowed = 0
             total_deposited = initial_amount
             
-            # Execute loops
-            for loop in range(1, loops + 1):
-                logger.info(f"Preparing loop {loop}")
-                
-                # Calculate amount to borrow (95% of max borrow or custom percentage)
-                borrow_amount = (deposit_shares * 0.95 * (borrow_percentage / 100)) / (10 ** decimals1)  # Adjust for token decimals
-                
-                if borrow_amount <= 0:
-                    logger.info(f"Borrow amount too small after loop {loop-1}")
-                    break
-                
-                logger.info(f"Loop {loop}: Borrowing {borrow_amount} {borrow_token} (95% of max borrow)")
-                
-                # 1. Borrow step
-                borrow_result = SiloBorrowSharesToolPrivy(self._agent, "")._run(
-                    token_0=borrow_token,
-                    token_1=deposit_token,
-                    amount=borrow_amount,
-                    sender=sender,
-                    return_tx_only=True
-                )
-                borrow_assets_amount = float(silo1_contract.functions.convertToAssets(int(borrow_amount*(10**decimals1))).call()) / (10**decimals1)
-                borrow_result = json.loads(borrow_result) if isinstance(borrow_result, str) else borrow_result
-                
-                if "error" in borrow_result:
-                    return json.dumps({"error": f"Failed to prepare borrow for loop {loop}: {borrow_result['error']}"})
-                
-                # Add borrow transaction to multicall
-                for tx in borrow_result["transactions"]:
-                    multicall_transactions.append({
-                        "target": tx["to"],
-                        "callData": tx["data"]
-                    })
-                
-                total_borrowed += borrow_amount
-                
-                # 2. Swap step - Convert borrowed token back to deposit token
-                swap_result = SonicSwapToolPrivy(self._agent, "")._run(
-                    from_token=borrow_token,
-                    to_token="wS",
-                    amount=borrow_assets_amount,
-                    sender=sender,
-                    return_tx_only=True
-                )
-                
-                swap_result = json.loads(swap_result) if isinstance(swap_result, str) else swap_result
-                
-                if "error" in swap_result:
-                    return json.dumps({"error": f"Failed to prepare swap for loop {loop}: {swap_result['error']}"})
-                
-                # Add swap transactions to multicall (approval + swap)
-                for tx in swap_result["transactions"]:
-                    value += int(tx.get("value", 0))
-                    multicall_transactions.append({
-                        "target": tx["to"],
-                        "callData": tx["data"]
-                    })
-                
-                # 3. Deposit step - Deposit the swapped tokens back as collateral
-                deposit_amount = float(swap_result["amount_out"])  # Convert back to deposit token
-                
-                if deposit_amount <= 0:
-                    logger.info(f"Deposit amount too small after swap in loop {loop}")
-                    break
-                
-                logger.info(f"Loop {loop}: Depositing {deposit_amount} {deposit_token} after swap")
-                deposit_shares = silo0_contract.functions.previewDeposit(int(deposit_amount*(10**decimals0)), 1).call()
+            # Step 1: Initial deposit
+            try:
+                logger.info(f"Step 1: Initial deposit of {initial_amount} {deposit_token}")
                 deposit_result = SiloDepositToolPrivy(self._agent, "")._run(
                     token_0=deposit_token,
                     token_1=borrow_token,
-                    amount=deposit_amount,
+                    amount=initial_amount,
                     collateral_type=1,  # Collateral
-                    sender=sender,
-                    return_tx_only=True
+                    sender=sender
                 )
                 
-                deposit_result = json.loads(deposit_result) if isinstance(deposit_result, str) else deposit_result
+                if isinstance(deposit_result, str):
+                    deposit_result = json.loads(deposit_result)
                 
                 if "error" in deposit_result:
-                    return json.dumps({"error": f"Failed to prepare deposit for loop {loop}: {deposit_result['error']}"})
+                    return json.dumps({"error": f"Initial deposit failed: {deposit_result['error']}"})
                 
-                # Add deposit transactions to multicall
-                for tx in deposit_result["transactions"]:
-                    multicall_transactions.append({
-                        "target": tx["to"],
-                        "callData": tx["data"]
-                    })
+                if not deposit_result.get("success", False):
+                    return json.dumps({"error": "Initial deposit transaction failed", "deposit_result": deposit_result})
                 
-                total_deposited += deposit_amount
+                logger.info(f"Initial deposit success: {deposit_result.get('tx_hash')}")
                 
-                # Store loop details for reporting
-                looping_details.append({
-                    "loop": loop,
-                    "borrow_amount": borrow_amount,
-                    "deposit_amount": deposit_amount,
-                })
+                # Get actual deposited shares for better borrowing calculation
+                w3 = Web3(Web3.HTTPProvider("http://localhost:8545"))
+                
+                # Get Silo addresses based on token positions
+                token_idx = 0 if is_token0_silo0 else 1
+                silo0_address = self._agent.connection_manager.connections["silo"]._get_silo_address(
+                    silo_config_address, token_idx)
+                silo1_address = self._agent.connection_manager.connections["silo"]._get_silo_address(
+                    silo_config_address, 1 - token_idx)
+                
+                silo0_contract = w3.eth.contract(address=silo0_address, abi=SILO_ABI)
+                silo1_contract = w3.eth.contract(address=silo1_address, abi=SILO_ABI)
+                
+            except Exception as e:
+                logger.error(f"Error in initial deposit: {str(e)}")
+                return json.dumps({"error": f"Initial deposit failed with exception: {str(e)}"})
             
-            # If no loops were possible
+            # Execute loops
+            for loop in range(1, loops + 1):
+                try:
+                    logger.info(f"Starting loop {loop}")
+                    
+                    # Step 2: Check max borrow and calculate amount
+                    max_borrow = silo1_contract.functions.maxBorrow(sender).call() / (10 ** borrow_token_decimals)
+                    borrow_amount = max_borrow * (borrow_percentage / 100)
+                    
+                    if borrow_amount <= 0.00001:  # Minimum threshold to avoid dust amounts
+                        logger.info(f"Borrow amount too small: {borrow_amount}, stopping loops")
+                        break
+                    
+                    logger.info(f"Loop {loop}: Borrowing {borrow_amount} {borrow_token} ({borrow_percentage}% of max borrow {max_borrow})")
+                    
+                    # Step 3: Borrow
+                    borrow_result = SiloBorrowToolPrivy(self._agent, "")._run(
+                        token_0=borrow_token,
+                        token_1=deposit_token,
+                        amount=borrow_amount,
+                        sender=sender
+                    )
+                    
+                    if isinstance(borrow_result, str):
+                        borrow_result = json.loads(borrow_result)
+                    
+                    if "error" in borrow_result:
+                        logger.error(f"Borrow failed in loop {loop}: {borrow_result['error']}")
+                        break
+                    
+                    if not borrow_result.get("success", False):
+                        logger.error(f"Borrow transaction failed in loop {loop}")
+                        break
+                    
+                    logger.info(f"Borrow success: {borrow_result.get('tx_hash')}")
+                    total_borrowed += borrow_amount
+                    
+                    # Step 4: Swap borrowed token back to deposit token
+                    logger.info(f"Loop {loop}: Swapping {borrow_amount} {borrow_token} to {deposit_token}")
+                    deposit_token_contract = w3.eth.contract(address=deposit_token_address, abi=ERC20_ABI)
+                    # Check deposit token balance before swap
+                    deposit_token_balance_before_wei = deposit_token_contract.functions.balanceOf(sender).call()
+                    deposit_token_balance_before = deposit_token_balance_before_wei / (10 ** deposit_token_decimals)
+                    logger.info(f"Balance before swap: {deposit_token_balance_before} {deposit_token}")
+                    
+                    # Fix swap retry mechanism with proper structure
+                    swap_success = False
+                    
+                    for i in range(10):  # Try up to 3 times with increasing slippage
+                        try:
+                            current_slippage = 0.5 + (i * 0.5)  # Start at 0.5% and increase by 0.5% each retry
+                            logger.info(f"Swap attempt {i+1} with slippage {current_slippage}%")
+                            
+                            swap_result = SonicSwapToolPrivy(self._agent, "")._run(
+                                from_token=borrow_token if borrow_token.upper() != "S" else "wS",
+                                to_token=deposit_token if deposit_token.upper() != "S" else "wS",
+                                amount=borrow_amount,
+                                sender=sender,
+                                slippage=current_slippage
+                            )
+                            
+                            # Check if swap was successful
+                            if swap_result and "error" not in swap_result:
+                                # Check deposit token balance after swap to calculate actual received amount
+                                deposit_token_balance_after_wei = deposit_token_contract.functions.balanceOf(sender).call()
+                                deposit_token_balance_after = deposit_token_balance_after_wei / (10 ** deposit_token_decimals)
+                                
+                                # Calculate the actual amount received based on balance difference
+                                deposit_amount = deposit_token_balance_after - deposit_token_balance_before
+                                
+                                # Round to avoid precision issues
+                                deposit_amount = float(f"{ceil_to_8_decimal(deposit_amount)}")
+                                
+                                logger.info(f"Balance after swap: {deposit_token_balance_after} {deposit_token}")
+                                logger.info(f"Actual swap output: {deposit_amount} {deposit_token}")
+                                
+                                if deposit_amount > 0.00001:  # Minimum threshold
+                                    swap_success = True
+                                    logger.info(f"Swap successful on attempt {i+1}: Got {deposit_amount} {deposit_token}")
+                                    break
+                                else:
+                                    logger.warning(f"Swap output too small: {deposit_amount}")
+                            else:
+                                error_msg = swap_result.get("error", "Unknown error") if swap_result else "Empty swap result"
+                                logger.warning(f"Swap attempt {i+1} failed: {error_msg}")
+                        except Exception as swap_error:
+                            logger.warning(f"Exception during swap attempt {i+1}: {str(swap_error)}")
+                    
+                    # Check if all swap attempts failed
+                    if not swap_success:
+                        logger.error(f"All swap attempts failed in loop {loop}")
+                        break
+                    
+                    # Step 5: Deposit the swapped tokens back as collateral
+                    logger.info(f"Loop {loop}: Depositing {deposit_amount} {deposit_token}")
+                    
+                    deposit_result = SiloDepositToolPrivy(self._agent, "")._run(
+                        token_0=deposit_token,
+                        token_1=borrow_token,
+                        amount=deposit_amount,
+                        collateral_type=1,  # Collateral
+                        sender=sender
+                    )
+                    
+                    if isinstance(deposit_result, str):
+                        deposit_result = json.loads(deposit_result)
+                    
+                    if "error" in deposit_result:
+                        logger.error(f"Deposit failed in loop {loop}: {deposit_result['error']}")
+                        break
+                    
+                    if not deposit_result.get("success", False):
+                        logger.error(f"Deposit transaction failed in loop {loop}")
+                        break
+                    
+                    logger.info(f"Deposit success: {deposit_result.get('tx_hash')}")
+                    total_deposited += deposit_amount
+                    
+                    # Store loop details with fixed precision
+                    looping_details.append({
+                        "loop": loop,
+                        "max_borrow": float(f"{ceil_to_8_decimal(max_borrow)}"),
+                        "borrow_amount": float(f"{ceil_to_8_decimal(borrow_amount)}"),
+                        "swap_amount_out": float(f"{ceil_to_8_decimal(deposit_amount)}"),
+                        "deposit_amount": float(f"{ceil_to_8_decimal(deposit_amount)}"),
+                        "borrow_tx": borrow_result.get("tx_hash"),
+                        "deposit_tx": deposit_result.get("tx_hash")
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"Error in loop {loop}: {str(e)}")
+                    break
+            
+            # If no loops were completed
             if len(looping_details) == 0:
-                return json.dumps({"error": "No loops were possible with the current market conditions and parameters"})
+                return json.dumps({
+                    "status": "partial_success",
+                    "message": "Initial deposit succeeded but no loops were completed",
+                    "initial_deposit": {
+                        "amount": initial_amount,
+                        "tx_hash": deposit_result.get("tx_hash")
+                    }
+                })
             
             # Calculate leverage
             leverage = total_deposited / initial_amount if initial_amount > 0 else 1.0
             
-            # Execute all transactions via multicall
-            multicall_contract = w3.eth.contract(address=MULTICALL_ADDRESS, abi=MULTICALL_ABI)
-            
-            multicall_tx = multicall_contract.functions.aggregate(
-                multicall_transactions
-            ).build_transaction({
-                'from': sender,
-                'nonce': w3.eth.get_transaction_count(sender),
-                'gas': 5000000,  # High gas limit for complex transaction
-                'gasPrice': w3.eth.gas_price,
-                'value': value
-            })
-            
-            # Execute the multicall transaction with Privy
-            auth_message = f"I authorize executing {len(looping_details)} loops of Silo strategy with {initial_amount} {deposit_token}"
-            multicall_result = execute(
-                self._agent.connection_manager.connections["privy"],
-                sender,
-                MULTICALL_ADDRESS,
-                multicall_tx['data'],
-                value,  # Pass the value needed for the transaction
-                "silo_looping",
-                auth_message
-            )
-            
-            if "error" in multicall_result:
-                return json.dumps({"error": multicall_result["error"]})
-            
-            # Build the success result
+            # Build the success result with fixed precision
             result = {
                 "status": "success",
                 "type": "silo_loop_strategy",
                 "token_pair": f"{deposit_token}/{borrow_token}",
-                "initial_amount": initial_amount,
+                "initial_amount": float(f"{ceil_to_8_decimal(initial_amount)}"),
                 "completed_loops": len(looping_details),
-                "total_deposited": total_deposited,
-                "total_borrowed": total_borrowed,
+                "total_deposited": float(f"{ceil_to_8_decimal(total_deposited)}"),
+                "total_borrowed": float(f"{ceil_to_8_decimal(total_borrowed)}"),
                 "leverage": f"{leverage:.2f}x",
-                "tx_hash": multicall_result.get("tx_hash"),
-                "receipt": multicall_result.get("receipt"),
-                "loop_details": looping_details,
-                "transactions_count": len(multicall_transactions)
+                "initial_deposit_tx": deposit_result.get("tx_hash"),
+                "loop_details": looping_details
             }
             
             return json.dumps(result, indent=2)
@@ -558,7 +554,6 @@ class SiloLoopingStrategyToolPrivy(SiloLoopingStrategyTool):
             logger.error(f"Error executing looping strategy: {str(e)}")
             return json.dumps({"error": f"Execution failed: {str(e)}"})
 
-# Keep the other Privy Silo tools as is
 class SiloRepayToolPrivy(SiloRepayTool):
     def _run(self, token_0: str, token_1: str, amount: float,
              sender: str = None, id: int = None):
@@ -710,7 +705,6 @@ class SiloClaimRewardsToolPrivy(SiloClaimRewardsTool):
                 "status": "Completed" if claim_result.get("success", False) else "Failed",
                 "sender": sender,
                 "tx_hash": claim_result.get("tx_hash"),
-                "receipt": claim_result.get("receipt"),
                 "success": claim_result.get("success", False),
                 "gas_stats": claim_result.get("gas_stats")
             }
@@ -721,6 +715,469 @@ class SiloClaimRewardsToolPrivy(SiloClaimRewardsTool):
             logger.error(f"Error in Privy Silo claim rewards: {str(e)}")
             return {"error": f"Claim rewards failed: {str(e)}"}
 
+class SiloExitStrategyToolPrivy:
+    def __init__(self, agent, llm=None):
+        self._agent = agent
+        self._llm = llm
+    
+    def _run(self, strategy_result: str, sender: str, swap_slippage: float = 0.5) -> str:
+        try:
+            # Parse the strategy result
+            if isinstance(strategy_result, str):
+                strategy_data = json.loads(strategy_result)
+            else:
+                strategy_data = strategy_result
+                
+            if "status" not in strategy_data or strategy_data["status"] != "success" or "type" not in strategy_data or strategy_data["type"] != "silo_loop_strategy":
+                return json.dumps({"error": "Invalid strategy result. Expected output from SiloLoopingStrategyToolPrivy."})
+            
+            # Extract key information
+            token_pair = strategy_data["token_pair"]
+            tokens = token_pair.split('/')
+            if len(tokens) != 2:
+                return json.dumps({"error": f"Invalid token pair format: {token_pair}. Expected format: 'TokenA/TokenB'"})
+            
+            deposit_token = tokens[0].strip()
+            borrow_token = tokens[1].strip()
+            total_borrowed = float(strategy_data["total_borrowed"])
+            total_deposited = float(strategy_data["total_deposited"])
+            
+            logger.info(f"Unwinding Silo strategy for {token_pair}")
+            logger.info(f"Total borrowed: {total_borrowed} {borrow_token}")
+            logger.info(f"Total deposited: {total_deposited} {deposit_token}")
+            
+            # Get token information and silo addresses
+            try:
+                # Initialize web3
+                w3 = Web3(Web3.HTTPProvider("http://localhost:8545"))
+                
+                # Silo Lens address for querying borrows
+                SILO_LENS_ADDRESS = "0xB6AdBb29f2D8ae731C7C72036A7FD5A7E970B198"
+                SILO_LENS_ABI = [
+                    {
+                        "inputs": [
+                            {"internalType": "address", "name": "silo", "type": "address"},
+                            {"internalType": "address", "name": "user", "type": "address"}
+                        ],
+                        "name": "debtBalanceOfUnderlying",
+                        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+                        "stateMutability": "view",
+                        "type": "function"
+                    }
+                ]
+                
+                silo_lens_contract = w3.eth.contract(address=SILO_LENS_ADDRESS, abi=SILO_LENS_ABI)
+                
+                # Get Silo configuration and token info
+                silo_config_result = get_silo_config_address(deposit_token, borrow_token)
+                if isinstance(silo_config_result, dict) and "error" in silo_config_result:
+                    return json.dumps({"error": f"Failed to get market configuration: {silo_config_result['error']}"})
+                
+                silo_config_address, is_deposit_token_silo0, deposit_token_address, deposit_token_decimals = silo_config_result
+                borrow_config_result = get_silo_config_address(borrow_token, deposit_token)
+                _, _, borrow_token_address, borrow_token_decimals = borrow_config_result
+                
+                # Get the silo addresses based on token positions
+                token_idx = 0 if is_deposit_token_silo0 else 1
+                deposit_silo_address = self._agent.connection_manager.connections["silo"]._get_silo_address(
+                    silo_config_address, token_idx)
+                borrow_silo_address = self._agent.connection_manager.connections["silo"]._get_silo_address(
+                    silo_config_address, 1 - token_idx)
+                
+                # Initialize token contracts and silo contracts
+                deposit_token_contract = w3.eth.contract(address=deposit_token_address, abi=ERC20_ABI)
+                borrow_token_contract = w3.eth.contract(address=borrow_token_address, abi=ERC20_ABI)
+                deposit_silo_contract = w3.eth.contract(address=deposit_silo_address, abi=SILO_ABI)
+                borrow_silo_contract = w3.eth.contract(address=borrow_silo_address, abi=SILO_ABI)
+                
+                logger.info(f"Deposit silo: {deposit_silo_address}")
+                logger.info(f"Borrow silo: {borrow_silo_address}")
+                
+            except Exception as e:
+                logger.error(f"Error getting silo information: {str(e)}")
+                return json.dumps({"error": f"Failed to get silo information: {str(e)}"})
+            
+            # Check initial positions
+            try:
+                # Check initial borrow balance
+                initial_borrow_wei = silo_lens_contract.functions.debtBalanceOfUnderlying(
+                    borrow_silo_address, sender
+                ).call()
+                initial_borrow = initial_borrow_wei / (10 ** borrow_token_decimals)
+                # Round to avoid precision issues
+                initial_borrow = float(f"{ceil_to_8_decimal(initial_borrow)}")
+                
+                # Check initial collateral balance
+                initial_collateral_wei = deposit_silo_contract.functions.maxWithdraw(sender).call()
+                initial_collateral = initial_collateral_wei / (10 ** deposit_token_decimals)
+                # Round to avoid precision issues
+                initial_collateral = float(f"{ceil_to_8_decimal(initial_collateral)}")
+                
+                logger.info(f"Initial collateral: {initial_collateral} {deposit_token}")
+                logger.info(f"Initial borrow: {initial_borrow} {borrow_token}")
+                
+                # If no positions, exit early
+                if initial_collateral <= 0.001 and initial_borrow <= 0.001:
+                    return json.dumps({
+                        "status": "success",
+                        "message": "No positions to unwind. Strategy already exited.",
+                        "deposit_token": deposit_token,
+                        "borrow_token": borrow_token
+                    })
+                
+            except Exception as e:
+                logger.error(f"Error checking initial positions: {str(e)}")
+                return json.dumps({"error": f"Failed to check initial positions: {str(e)}"})
+            
+            # NEW EXIT STRATEGY:
+            # 1. Withdraw maximum available collateral
+            # 2. Swap to borrow token
+            # 3. Repay borrow
+            # 4. Repeat until positions are empty
+            
+            unwinding_steps = []
+            iteration = 1
+            
+            while True:
+                step_result = {
+                    "iteration": iteration,
+                    "status": "pending",
+                    "actions": []
+                }
+                
+                try:
+                    # Step 1: Check how much we can withdraw
+                    max_withdraw_wei = deposit_silo_contract.functions.maxWithdraw(sender).call()
+                    max_withdraw = max_withdraw_wei / (10 ** deposit_token_decimals)
+                    # Round to avoid precision issues
+                    max_withdraw = float(f"{ceil_to_8_decimal(max_withdraw)}")
+                    
+                    # Check how much is still borrowed
+                    current_borrow_wei = silo_lens_contract.functions.debtBalanceOfUnderlying(
+                        borrow_silo_address, sender
+                    ).call()
+                    current_borrow = current_borrow_wei / (10 ** borrow_token_decimals)
+                    # Round to avoid precision issues
+                    current_borrow = float(f"{ceil_to_8_decimal(current_borrow)}")
+                    
+                    logger.info(f"Iteration {iteration}: Max withdrawable: {max_withdraw} {deposit_token}")
+                    logger.info(f"Iteration {iteration}: Current borrow: {current_borrow} {borrow_token}")
+                    
+                    # Check if we're done
+                    if max_withdraw <= 0.001 and current_borrow <= 0.001:
+                        logger.info("Positions fully unwound!")
+                        break
+                    
+                    # If nothing to withdraw but still have borrow, we need to repay from wallet
+                    if max_withdraw <= 0.001 and current_borrow > 0.001:
+                        # Check if we have enough in wallet to repay
+                        borrow_token_balance_wei = borrow_token_contract.functions.balanceOf(sender).call()
+                        borrow_token_balance = borrow_token_balance_wei / (10 ** borrow_token_decimals)
+                        
+                        if borrow_token_balance >= current_borrow:
+                            logger.info(f"No collateral left but can repay {current_borrow} {borrow_token} from wallet")
+                            
+                            # Repay from wallet
+                            repay_result = SiloRepayToolPrivy(self._agent, self._llm)._run(
+                                token_0=borrow_token,
+                                token_1=deposit_token,
+                                amount=current_borrow,
+                                sender=sender
+                            )
+                            
+                            if isinstance(repay_result, str):
+                                try:
+                                    repay_result = json.loads(repay_result)
+                                except:
+                                    pass
+                            
+                            if "error" in repay_result:
+                                logger.warning(f"Failed to repay: {repay_result['error']}")
+                                step_result["status"] = "failed"
+                                step_result["error"] = f"Repay failed: {repay_result['error']}"
+                            else:
+                                logger.info(f"Repaid {current_borrow} {borrow_token}")
+                                step_result["actions"].append({
+                                    "type": "repay_from_wallet",
+                                    "amount": current_borrow,
+                                    "tx_hash": repay_result.get("tx_hash")
+                                })
+                                step_result["status"] = "success"
+                        else:
+                            logger.warning(f"No collateral left and insufficient {borrow_token} in wallet to repay remaining debt")
+                            step_result["status"] = "failed"
+                            step_result["error"] = f"No collateral left and insufficient {borrow_token} in wallet"
+                        
+                        unwinding_steps.append(step_result)
+                        break
+                    
+                    # Step 2: Withdraw available collateral
+                    withdraw_amount = max_withdraw * 0.95  # Leave a small buffer
+                    # Round to avoid precision issues
+                    withdraw_amount = float(f"{ceil_to_8_decimal(withdraw_amount)}")
+                    
+                    if withdraw_amount <= 0.001:
+                        logger.warning(f"Withdraw amount too small: {withdraw_amount}")
+                        break
+                    
+                    logger.info(f"Withdrawing {withdraw_amount} {deposit_token}")
+                    withdraw_result = SiloWithdrawToolPrivy(self._agent, self._llm)._run(
+                        token_0=deposit_token,
+                        token_1=borrow_token,
+                        amount=withdraw_amount,
+                        collateral_type=1,  # Collateral
+                        sender=sender
+                    )
+                    
+                    if isinstance(withdraw_result, str):
+                        try:
+                            withdraw_result = json.loads(withdraw_result)
+                        except:
+                            pass
+                    
+                    if "error" in withdraw_result:
+                        logger.warning(f"Failed to withdraw: {withdraw_result['error']}")
+                        step_result["status"] = "failed"
+                        step_result["error"] = f"Withdrawal failed: {withdraw_result['error']}"
+                        unwinding_steps.append(step_result)
+                        break
+                    
+                    logger.info(f"Withdrawal successful: {withdraw_result.get('tx_hash')}")
+                    step_result["actions"].append({
+                        "type": "withdrawal",
+                        "amount": withdraw_amount,
+                        "tx_hash": withdraw_result.get("tx_hash")
+                    })
+                    
+                    # Step 3: Swap withdrawn collateral to borrow token
+                    deposit_token_balance_wei = deposit_token_contract.functions.balanceOf(sender).call()
+                    deposit_token_balance = deposit_token_balance_wei / (10 ** deposit_token_decimals)
+                    # Round to avoid precision issues
+                    deposit_token_balance = float(f"{ceil_to_8_decimal(deposit_token_balance)}")
+                    
+                    swap_amount = min(deposit_token_balance * 0.98, deposit_token_balance)  # Use 98% of balance
+                    # Round to avoid precision issues
+                    swap_amount = float(f"{ceil_to_8_decimal(swap_amount)}")
+                    
+                    if swap_amount <= 0.001:
+                        logger.warning(f"Swap amount too small: {swap_amount}")
+                        step_result["status"] = "partial"
+                        step_result["reason"] = "Withdrawal successful but swap amount too small"
+                        unwinding_steps.append(step_result)
+                        break
+                    
+                    logger.info(f"Swapping {swap_amount} {deposit_token} for {borrow_token}")
+                    
+                    # Check borrow token balance before swap
+                    borrow_token_balance_before_wei = borrow_token_contract.functions.balanceOf(sender).call()
+                    borrow_token_balance_before = borrow_token_balance_before_wei / (10 ** borrow_token_decimals)
+                    # Round to avoid precision issues
+                    borrow_token_balance_before = float(f"{ceil_to_8_decimal(borrow_token_balance_before)}")
+                    logger.info(f"Balance before swap: {borrow_token_balance_before} {borrow_token}")
+                    
+                    # Use retry mechanism for swap
+                    swap_success = False
+                    for i in range(10):  # Try up to 3 times with increasing slippage
+                        try:
+                            current_slippage = swap_slippage + (i * 0.5)  # Increase slippage each retry
+                            logger.info(f"Swap attempt {i+1} with slippage {current_slippage}%")
+                            
+                            swap_result = SonicSwapToolPrivy(self._agent, self._llm)._run(
+                                from_token=deposit_token if deposit_token.upper() != "S" else "wS",
+                                to_token=borrow_token if borrow_token.upper() != "S" else "wS",
+                                amount=swap_amount,
+                                sender=sender,
+                                slippage=current_slippage
+                            )
+                            
+                            if swap_result and "error" not in swap_result:
+                                # Check balance after swap to calculate actual received amount
+                                borrow_token_balance_after_wei = borrow_token_contract.functions.balanceOf(sender).call()
+                                borrow_token_balance_after = borrow_token_balance_after_wei / (10 ** borrow_token_decimals)
+                                
+                                # Calculate the actual amount received based on balance difference
+                                received_amount = borrow_token_balance_after - borrow_token_balance_before
+                                # Round to avoid precision issues
+                                received_amount = float(f"{ceil_to_8_decimal(received_amount)}")
+                                
+                                logger.info(f"Balance after swap: {borrow_token_balance_after} {borrow_token}")
+                                logger.info(f"Actual swap output: {received_amount} {borrow_token}")
+                                
+                                if received_amount > 0.00001:  # Ensure we received a meaningful amount
+                                    swap_success = True
+                                    logger.info(f"Swap successful on attempt {i+1}: Got {received_amount} {borrow_token}")
+                                    
+                                    step_result["actions"].append({
+                                        "type": "swap",
+                                        "amount": swap_amount,
+                                        "received": received_amount,
+                                        "attempt": i+1,
+                                        "slippage": current_slippage,
+                                        "tx_hash": swap_result.get("tx")
+                                    })
+                                    break
+                                else:
+                                    logger.warning(f"Received amount too small: {received_amount}")
+                            else:
+                                error_msg = swap_result.get("error", "Unknown error") if swap_result else "Empty swap result"
+                                logger.warning(f"Swap attempt {i+1} failed: {error_msg}")
+                        except Exception as swap_error:
+                            logger.warning(f"Exception during swap attempt {i+1}: {str(swap_error)}")
+                    
+                    if not swap_success:
+                        logger.warning("All swap attempts failed")
+                        step_result["status"] = "partial"
+                        step_result["error"] = "All swap attempts failed"
+                        step_result["reason"] = "Withdrawal successful but swap failed"
+                        unwinding_steps.append(step_result)
+                        break
+                    
+                    # Step 4: Repay borrow with swapped tokens
+                    # Get current borrow token balance (after swap)
+                    borrow_token_balance_wei = borrow_token_contract.functions.balanceOf(sender).call()
+                    borrow_token_balance = borrow_token_balance_wei / (10 ** borrow_token_decimals)
+                    # Round to avoid precision issues
+                    borrow_token_balance = float(f"{ceil_to_8_decimal(borrow_token_balance)}")
+                    
+                    repay_amount = min(borrow_token_balance * 0.98, current_borrow)  # Repay up to 98% of balance or all debt
+                    # Round to avoid precision issues
+                    repay_amount = float(f"{ceil_to_8_decimal(repay_amount)}")
+                    
+                    if repay_amount <= 0.001:
+                        logger.warning(f"Repay amount too small: {repay_amount}")
+                        step_result["status"] = "partial"
+                        step_result["reason"] = "Withdrawal and swap successful but repay amount too small"
+                        unwinding_steps.append(step_result)
+                        continue  # Continue to next iteration even if we couldn't repay this time
+                    
+                    logger.info(f"Repaying {repay_amount} {borrow_token}")
+                    repay_result = SiloRepayToolPrivy(self._agent, self._llm)._run(
+                        token_0=borrow_token,
+                        token_1=deposit_token,
+                        amount=repay_amount,
+                        sender=sender
+                    )
+                    
+                    if isinstance(repay_result, str):
+                        try:
+                            repay_result = json.loads(repay_result)
+                        except:
+                            pass
+                    
+                    if "error" in repay_result:
+                        logger.warning(f"Failed to repay: {repay_result['error']}")
+                        step_result["status"] = "partial"
+                        step_result["error"] = f"Repay failed: {repay_result['error']}"
+                        step_result["reason"] = "Withdrawal and swap successful but repay failed"
+                    else:
+                        logger.info(f"Repay successful: {repay_result.get('tx_hash')}")
+                        step_result["actions"].append({
+                            "type": "repay",
+                            "amount": repay_amount,
+                            "tx_hash": repay_result.get("tx_hash")
+                        })
+                        step_result["status"] = "success"
+                    
+                    unwinding_steps.append(step_result)
+                    
+                    # Increment iteration counter
+                    iteration += 1
+                    
+                    # Check if we should continue
+                    if iteration > 10:  # Safety limit
+                        logger.warning("Reached maximum number of iterations (10)")
+                        break
+                    
+                except Exception as e:
+                    logger.error(f"Error in unwinding iteration {iteration}: {str(e)}")
+                    step_result["status"] = "failed"
+                    step_result["error"] = str(e)
+                    unwinding_steps.append(step_result)
+                    break
+            
+            # Check final state
+            try:
+                # Get final positions
+                final_collateral_wei = deposit_silo_contract.functions.maxWithdraw(sender).call()
+                final_collateral = final_collateral_wei / (10 ** deposit_token_decimals)
+                # Round to avoid precision issues
+                final_collateral = float(f"{ceil_to_8_decimal(final_collateral)}")
+                
+                final_borrow_wei = silo_lens_contract.functions.debtBalanceOfUnderlying(
+                    borrow_silo_address, sender
+                ).call()
+                final_borrow = final_borrow_wei / (10 ** borrow_token_decimals)
+                # Round to avoid precision issues
+                final_borrow = float(f"{ceil_to_8_decimal(final_borrow)}")
+                
+                # Get wallet balances
+                deposit_token_balance_wei = deposit_token_contract.functions.balanceOf(sender).call()
+                deposit_token_balance = deposit_token_balance_wei / (10 ** deposit_token_decimals)
+                # Round to avoid precision issues
+                deposit_token_balance = float(f"{ceil_to_8_decimal(deposit_token_balance)}")
+                
+                borrow_token_balance_wei = borrow_token_contract.functions.balanceOf(sender).call()
+                borrow_token_balance = borrow_token_balance_wei / (10 ** borrow_token_decimals)
+                # Round to avoid precision issues
+                borrow_token_balance = float(f"{ceil_to_8_decimal(borrow_token_balance)}")
+                
+                logger.info(f"Final positions - Collateral: {final_collateral} {deposit_token}, Borrow: {final_borrow} {borrow_token}")
+                logger.info(f"Final wallet balances - {deposit_token}: {deposit_token_balance}, {borrow_token}: {borrow_token_balance}")
+                
+                # claim rewards
+                claim_rewards_result = SiloClaimRewardsToolPrivy(self._agent, self._llm)._run(sender)
+                
+                # Build final result with fixed precision
+                result = {
+                    "status": "success",
+                    "type": "silo_exit_strategy",
+                    "token_pair": token_pair,
+                    "original_strategy": {
+                        "total_borrowed": float(f"{ceil_to_8_decimal(total_borrowed)}"),
+                        "total_deposited": float(f"{ceil_to_8_decimal(total_deposited)}")
+                    },
+                    "unwinding_steps": unwinding_steps,
+                    "iterations_executed": iteration - 1,
+                    "initial_state": {
+                        "collateral_balance": float(f"{ceil_to_8_decimal(initial_collateral)}"),
+                        "borrow_balance": float(f"{ceil_to_8_decimal(initial_borrow)}")
+                    },
+                    "final_state": {
+                        "collateral_balance": float(f"{ceil_to_8_decimal(final_collateral)}"),
+                        "borrow_balance": float(f"{ceil_to_8_decimal(final_borrow)}"),
+                        "wallet_balances": {
+                            deposit_token: float(f"{ceil_to_8_decimal(deposit_token_balance)}"),
+                            borrow_token: float(f"{ceil_to_8_decimal(borrow_token_balance)}")
+                        }
+                    },
+                    "fully_unwound": (final_collateral <= 0.001 and final_borrow <= 0.001),
+                    "claim_rewards_tx": claim_rewards_result.get("tx_hash")
+                }
+                
+                return json.dumps(result, indent=2)
+                
+            except Exception as e:
+                logger.error(f"Error checking final state: {str(e)}")
+                
+                # Return partial result
+                return json.dumps({
+                    "status": "partial_success",
+                    "type": "silo_exit_strategy",
+                    "token_pair": token_pair,
+                    "original_strategy": {
+                        "total_borrowed": total_borrowed,
+                        "total_deposited": total_deposited
+                    },
+                    "unwinding_steps": unwinding_steps,
+                    "iterations_executed": iteration - 1,
+                    "error": f"Failed to check final state: {str(e)}"
+                }, indent=2)
+            
+        except Exception as e:
+            logger.error(f"Error exiting strategy: {str(e)}")
+            return json.dumps({"error": f"Failed to exit strategy: {str(e)}"})
+
+# Update the get_privy_silo_tools function to include the new tool
 def get_privy_silo_tools(agent, llm) -> list:
     """Return a list of all Privy Silo-related tools."""
     return [
@@ -729,5 +1186,6 @@ def get_privy_silo_tools(agent, llm) -> list:
         SiloRepayToolPrivy(agent, llm),
         SiloWithdrawToolPrivy(agent, llm),
         SiloClaimRewardsToolPrivy(agent, llm),
-        SiloLoopingStrategyToolPrivy(agent, llm)
+        SiloLoopingStrategyToolPrivy(agent, llm),
+        SiloExitStrategyToolPrivy(agent, llm)
     ]

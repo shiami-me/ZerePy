@@ -290,6 +290,49 @@ class SiloBorrowTool(BaseTool):
         except Exception as e:
             return f"Error borrowing tokens: {str(e)}"
 
+class SiloBorrowSharesTool(BaseTool):
+    name: str = "silo_borrow_shares"
+    description: str = """
+    silo_borrow_shares: Borrow shares from a Silo smart contract.
+    Ex - borrow 1000 shares from Sonic/USDC pair. Then token_0: USDC, token_1: Sonic, amount: 1000.0
+        borrow 100 shares from Sonic/USDC pair. Then token_0: Sonic, token_1: USDC, amount: 100.0
+        borrow 1000 shares from market with ID 1. Then id: 1, token_0: USDC, token_1: Sonic, amount: 1000.0
+    Args:
+        token_0: Symbol of the token to borrow shares
+        token_1: Symbol of the other token in the Silo pair
+        amount: Amount of shares to borrow
+        sender: Address of the sender
+        receiver: Address to receive the borrowed shares (optional, defaults to sender)
+        id: Optional market ID to specify a specific market
+    """
+    
+    def __init__(self, agent, llm):
+        super().__init__()
+        self._agent = agent
+        self._llm = llm
+    
+    def _run(self, token_0: str, token_1: str, amount: float, sender: str, 
+             receiver: Optional[str] = None, id: Optional[int] = None) -> str:
+        try:
+            silo_config_address, is_token0_silo0, token_address, decimals = get_silo_config_address(token_0, token_1, id)
+            # Get appropriate silo address based on token position
+            token_idx = 0 if is_token0_silo0 else 1
+            silo_address = self._agent.connection_manager.connections["silo"]._get_silo_address(silo_config_address, token_idx)
+            result = self._agent.connection_manager.connections["silo"].borrow_shares(
+                silo_address=silo_address,
+                amount=amount,
+                sender=sender,
+                receiver=receiver,
+                decimals=decimals
+            )
+            result["type"] = "borrow_shares"
+            result["tokenAddress"] = token_address
+            result["status"] = "Initiated. Continue in the frontend."
+            result["sender"] = sender
+            return result
+        except Exception as e:
+            return f"Error borrowing shares: {str(e)}"
+
 class SiloRepayTool(BaseTool):
     name: str = "silo_repay"
     description: str = """
