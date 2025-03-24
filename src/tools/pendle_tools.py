@@ -30,7 +30,7 @@ class PendleMarketsInfoTool(BaseTool):
                     
                 formatted_market = {
                     'market': market.get('symbol', ''),
-                    'expires': self._format_expiry(market.get('expiry', 0)),
+                    'expires': (market.get('expiry', 0)),
                     'liquidity': f"${float(market.get('liquidity', 0)):,.2f}",
                     'implied_apy': f"{float(market.get('impliedApy', 0)) * 100:.2f}%",
                     'yield_apy': f"{float(market.get('ytFloatingApy', 0)) * 100:.2f}%",
@@ -57,14 +57,6 @@ class PendleMarketsInfoTool(BaseTool):
             
         except Exception as e:
             return f"Error fetching Pendle markets: {str(e)}"
-    
-    def _format_expiry(self, timestamp: int) -> str:
-        """Format timestamp to readable date"""
-        from datetime import datetime
-        if not timestamp:
-            return "Perpetual"
-        dt = datetime.fromtimestamp(timestamp)
-        return dt.strftime("%Y-%m-%d")
 
 class PendleAssetsInfoTool(BaseTool):
     name: str = "pendle_assets"
@@ -94,19 +86,13 @@ class PendleAssetsInfoTool(BaseTool):
                 if asset.get('price') is not None:
                     price_str = f"${float(asset.get('price', 0)):,.6f}"
                 
-                expiry_str = "N/A"
-                if asset.get('expiry'):
-                    from datetime import datetime
-                    dt = datetime.fromtimestamp(asset.get('expiry'))
-                    expiry_str = dt.strftime("%Y-%m-%d")
-                
                 formatted_asset = {
                     'symbol': asset.get('symbol', ''),
                     'type': asset.get('type', ''),
                     'address': asset.get('address', ''),
                     'price': price_str,
                     'decimals': asset.get('decimals', 18),
-                    'expiry': expiry_str,
+                    'expiry': asset.get('expiry'),
                     'zappable': asset.get('zappable', False),
                 }
                 formatted_assets.append(formatted_asset)
