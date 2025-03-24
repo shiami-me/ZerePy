@@ -1,5 +1,5 @@
 from src.tools.silo_tools import SiloDepositTool, SiloBorrowTool, SiloRepayTool, SiloWithdrawTool, SiloClaimRewardsTool, SiloLoopingStrategyTool, get_silo_config_address, SiloBorrowSharesTool
-from .sonic_tools import SonicSwapToolPrivy
+from .sonic_tools import SonicSwapToolPrivy, SonicWrapToolPrivy
 import json
 import logging
 from web3 import Web3
@@ -311,7 +311,7 @@ class SiloBorrowSharesToolPrivy(SiloBorrowSharesTool):
 class SiloLoopingStrategyToolPrivy(SiloLoopingStrategyTool):
     
     def _run(self, token: str, initial_amount: float, sender: str, 
-             loops: int = 3, borrow_percentage: float = 95) -> str:
+             loops: int = 3, borrow_percentage: float = 95, id: int = None, deposit_token: str = None) -> str:
         try:
             # Parse token pair
             tokens = token.split(',')
@@ -320,24 +320,28 @@ class SiloLoopingStrategyToolPrivy(SiloLoopingStrategyTool):
             
             token_0, token_1 = tokens[0].strip(), tokens[1].strip()
             
-            logger.info(f"Executing looping strategy for {token_0}/{token_1} with initial amount {initial_amount}")
+            # If deposit_token is not specified, use token_0
+            if deposit_token is None:
+                deposit_token = token_0
+            
+            logger.info(f"Executing looping strategy for {token_0}/{token_1} with initial amount {initial_amount} using deposit token {deposit_token}")
             
             # Get Silo config and token information
             try:
-                silo_config_result = get_silo_config_address(token_0, token_1)
+                silo_config_result = get_silo_config_address(token_0, token_1, id)
                 if isinstance(silo_config_result, dict) and "error" in silo_config_result:
                     return json.dumps({"error": f"Failed to get market configuration: {silo_config_result['error']}"})
                 
                 silo_config_address, is_token0_silo0, deposit_token_address, decimals0 = silo_config_result
-                _, _, _, decimals1 = get_silo_config_address(token_1, token_0)
+                _, _, _, decimals1 = get_silo_config_address(token_1, token_0, id)
                 
                 # Determine which token is collateral and which is borrowed
-                deposit_token = token_0
+                silo_deposit_token = token_0
                 borrow_token = token_1
                 deposit_token_decimals = decimals0
                 borrow_token_decimals = decimals1
                 
-                logger.info(f"Deposit token: {deposit_token}, Decimals: {deposit_token_decimals}")
+                logger.info(f"Deposit token (silo): {silo_deposit_token}, Decimals: {deposit_token_decimals}")
                 logger.info(f"Borrow token: {borrow_token}, Decimals: {borrow_token_decimals}")
             except Exception as e:
                 logger.error(f"Error getting token information: {str(e)}")
@@ -347,16 +351,63 @@ class SiloLoopingStrategyToolPrivy(SiloLoopingStrategyTool):
             looping_details = []
             total_borrowed = 0
             total_deposited = initial_amount
+            amount_to_deposit = initial_amount
+            
+            # Initialize web3 connection
+            w3 = Web3(Web3.HTTPProvider("http://localhost:8545"))
+            
+            # Check if we need to swap the deposit token to silo_deposit_token
+            swapped = False
+            
+            if deposit_token.upper() != silo_deposit_token.upper():
+                # Need to swap deposit_token to silo_deposit_token first
+                logger.info(f"Swapping {initial_amount} {deposit_token} to {silo_deposit_token}")
+                
+                # Special case: if silo_deposit_token is S/wS, we'll get wS after swap
+                swap_to_token = silo_deposit_token
+                if silo_deposit_token.upper() == "S":
+                    swap_to_token = "wS"
+                
+                swap_result = SonicSwapToolPrivy(self._agent, "")._run(
+                    from_token=deposit_token if deposit_token.upper() != "S" else "wS",
+                    to_token=swap_to_token,
+                    amount=initial_amount,
+                    sender=sender,
+                    slippage=0.5
+                )
+                
+                if "error" in swap_result:
+                    return json.dumps({"error": f"Failed to swap deposit token: {swap_result['error']}"})
+                
+                logger.info(f"Swap result: {swap_result}")
+                swapped = True
+                amount_to_deposit = swap_result["amount_out"]
+                logger.info(f"Will deposit {amount_to_deposit} {silo_deposit_token} after swap")
+            
+            # Check if we need to wrap S to wS for Silo
+            elif silo_deposit_token.upper() == "S":
+                logger.info(f"Wrapping {amount_to_deposit} S to wS for Silo deposit")
+                wrap_result = SonicWrapToolPrivy(self._agent)._run(
+                    amount=amount_to_deposit,
+                    sender=sender
+                )
+                
+                if "error" in wrap_result:
+                    return json.dumps({"error": f"Failed to wrap S to wS: {wrap_result['error']}"})
+                
+                logger.info(f"Wrap result: {wrap_result}")
+                wrapped = True
             
             # Step 1: Initial deposit
             try:
-                logger.info(f"Step 1: Initial deposit of {initial_amount} {deposit_token}")
+                logger.info(f"Step 1: Initial deposit of {amount_to_deposit} {silo_deposit_token}")
                 deposit_result = SiloDepositToolPrivy(self._agent, "")._run(
-                    token_0=deposit_token,
+                    token_0=silo_deposit_token,
                     token_1=borrow_token,
-                    amount=initial_amount,
+                    amount=amount_to_deposit,
                     collateral_type=1,  # Collateral
-                    sender=sender
+                    sender=sender,
+                    id=id
                 )
                 
                 if isinstance(deposit_result, str):
@@ -405,9 +456,10 @@ class SiloLoopingStrategyToolPrivy(SiloLoopingStrategyTool):
                     # Step 3: Borrow
                     borrow_result = SiloBorrowToolPrivy(self._agent, "")._run(
                         token_0=borrow_token,
-                        token_1=deposit_token,
+                        token_1=silo_deposit_token,
                         amount=borrow_amount,
-                        sender=sender
+                        sender=sender,
+                        id=id
                     )
                     
                     if isinstance(borrow_result, str):
@@ -425,24 +477,24 @@ class SiloLoopingStrategyToolPrivy(SiloLoopingStrategyTool):
                     total_borrowed += borrow_amount
                     
                     # Step 4: Swap borrowed token back to deposit token
-                    logger.info(f"Loop {loop}: Swapping {borrow_amount} {borrow_token} to {deposit_token}")
+                    logger.info(f"Loop {loop}: Swapping {borrow_amount} {borrow_token} to {silo_deposit_token}")
                     deposit_token_contract = w3.eth.contract(address=deposit_token_address, abi=ERC20_ABI)
                     # Check deposit token balance before swap
                     deposit_token_balance_before_wei = deposit_token_contract.functions.balanceOf(sender).call()
                     deposit_token_balance_before = deposit_token_balance_before_wei / (10 ** deposit_token_decimals)
-                    logger.info(f"Balance before swap: {deposit_token_balance_before} {deposit_token}")
+                    logger.info(f"Balance before swap: {deposit_token_balance_before} {silo_deposit_token}")
                     
                     # Fix swap retry mechanism with proper structure
                     swap_success = False
                     
-                    for i in range(10):  # Try up to 3 times with increasing slippage
+                    for i in range(10):  # Try up to 10 times with increasing slippage
                         try:
                             current_slippage = 0.5 + (i * 0.5)  # Start at 0.5% and increase by 0.5% each retry
                             logger.info(f"Swap attempt {i+1} with slippage {current_slippage}%")
                             
                             swap_result = SonicSwapToolPrivy(self._agent, "")._run(
                                 from_token=borrow_token if borrow_token.upper() != "S" else "wS",
-                                to_token=deposit_token if deposit_token.upper() != "S" else "wS",
+                                to_token=silo_deposit_token if silo_deposit_token.upper() != "S" else "wS",
                                 amount=borrow_amount,
                                 sender=sender,
                                 slippage=current_slippage
@@ -460,12 +512,12 @@ class SiloLoopingStrategyToolPrivy(SiloLoopingStrategyTool):
                                 # Round to avoid precision issues
                                 deposit_amount = float(f"{ceil_to_8_decimal(deposit_amount)}")
                                 
-                                logger.info(f"Balance after swap: {deposit_token_balance_after} {deposit_token}")
-                                logger.info(f"Actual swap output: {deposit_amount} {deposit_token}")
+                                logger.info(f"Balance after swap: {deposit_token_balance_after} {silo_deposit_token}")
+                                logger.info(f"Actual swap output: {deposit_amount} {silo_deposit_token}")
                                 
                                 if deposit_amount > 0.00001:  # Minimum threshold
                                     swap_success = True
-                                    logger.info(f"Swap successful on attempt {i+1}: Got {deposit_amount} {deposit_token}")
+                                    logger.info(f"Swap successful on attempt {i+1}: Got {deposit_amount} {silo_deposit_token}")
                                     break
                                 else:
                                     logger.warning(f"Swap output too small: {deposit_amount}")
@@ -481,14 +533,15 @@ class SiloLoopingStrategyToolPrivy(SiloLoopingStrategyTool):
                         break
                     
                     # Step 5: Deposit the swapped tokens back as collateral
-                    logger.info(f"Loop {loop}: Depositing {deposit_amount} {deposit_token}")
+                    logger.info(f"Loop {loop}: Depositing {deposit_amount} {silo_deposit_token}")
                     
                     deposit_result = SiloDepositToolPrivy(self._agent, "")._run(
-                        token_0=deposit_token,
+                        token_0=silo_deposit_token,
                         token_1=borrow_token,
                         amount=deposit_amount,
                         collateral_type=1,  # Collateral
-                        sender=sender
+                        sender=sender,
+                        id=id
                     )
                     
                     if isinstance(deposit_result, str):
@@ -522,14 +575,25 @@ class SiloLoopingStrategyToolPrivy(SiloLoopingStrategyTool):
             
             # If no loops were completed
             if len(looping_details) == 0:
-                return json.dumps({
+                result = {
                     "status": "partial_success",
                     "message": "Initial deposit succeeded but no loops were completed",
                     "initial_deposit": {
+                        "deposit_token": deposit_token,  # Original deposit token specified by user
+                        "silo_deposit_token": silo_deposit_token if silo_deposit_token.upper() != "S" else "wS",  # Actual token deposited in Silo (might be wS)
                         "amount": initial_amount,
                         "tx_hash": deposit_result.get("tx_hash")
                     }
-                })
+                }
+                
+                if swapped:
+                    result["initial_deposit"]["swapped"] = True
+                    result["initial_deposit"]["swap_amount"] = amount_to_deposit
+                
+                if wrapped:
+                    result["initial_deposit"]["wrapped"] = True
+                
+                return json.dumps(result)
             
             # Calculate leverage
             leverage = total_deposited / initial_amount if initial_amount > 0 else 1.0
@@ -538,7 +602,11 @@ class SiloLoopingStrategyToolPrivy(SiloLoopingStrategyTool):
             result = {
                 "status": "success",
                 "type": "silo_loop_strategy",
-                "token_pair": f"{deposit_token}/{borrow_token}",
+                "deposit_token": {
+                    "original": deposit_token,  # Original deposit token specified by user
+                    "silo": silo_deposit_token if silo_deposit_token.upper() != "S" else "wS"  # Actual token deposited in Silo (might be wS)
+                },
+                "token_pair": f"{silo_deposit_token}/{borrow_token}",
                 "initial_amount": float(f"{ceil_to_8_decimal(initial_amount)}"),
                 "completed_loops": len(looping_details),
                 "total_deposited": float(f"{ceil_to_8_decimal(total_deposited)}"),
@@ -547,6 +615,23 @@ class SiloLoopingStrategyToolPrivy(SiloLoopingStrategyTool):
                 "initial_deposit_tx": deposit_result.get("tx_hash"),
                 "loop_details": looping_details
             }
+            
+            # Add swap/wrap information
+            if swapped:
+                result["token_conversion"] = {
+                    "type": "swap",
+                    "from_token": deposit_token,
+                    "to_token": silo_deposit_token if silo_deposit_token.upper() != "S" else "wS",
+                    "original_amount": initial_amount,
+                    "converted_amount": amount_to_deposit
+                }
+            elif wrapped:
+                result["token_conversion"] = {
+                    "type": "wrap",
+                    "from_token": "S",
+                    "to_token": "wS",
+                    "amount": initial_amount
+                }
             
             return json.dumps(result, indent=2)
             
@@ -720,7 +805,7 @@ class SiloExitStrategyToolPrivy:
         self._agent = agent
         self._llm = llm
     
-    def _run(self, strategy_result: str, sender: str, swap_slippage: float = 0.5) -> str:
+    def _run(self, strategy_result: str, sender: str, swap_slippage: float = 0.5, id: int = None) -> str:
         try:
             # Parse the strategy result
             if isinstance(strategy_result, str):
@@ -737,14 +822,20 @@ class SiloExitStrategyToolPrivy:
             if len(tokens) != 2:
                 return json.dumps({"error": f"Invalid token pair format: {token_pair}. Expected format: 'TokenA/TokenB'"})
             
-            deposit_token = tokens[0].strip()
+            # Get the original deposit token specified by the user
+            original_deposit_token = strategy_data.get("deposit_token", {}).get("original", tokens[0].strip())
+            
+            # Get the tokens used in Silo
+            silo_deposit_token = tokens[0].strip()
             borrow_token = tokens[1].strip()
             total_borrowed = float(strategy_data["total_borrowed"])
             total_deposited = float(strategy_data["total_deposited"])
             
             logger.info(f"Unwinding Silo strategy for {token_pair}")
+            logger.info(f"Original deposit token: {original_deposit_token}")
+            logger.info(f"Silo deposit token: {silo_deposit_token}")
             logger.info(f"Total borrowed: {total_borrowed} {borrow_token}")
-            logger.info(f"Total deposited: {total_deposited} {deposit_token}")
+            logger.info(f"Total deposited: {total_deposited} {silo_deposit_token}")
             
             # Get token information and silo addresses
             try:
@@ -769,14 +860,14 @@ class SiloExitStrategyToolPrivy:
                 silo_lens_contract = w3.eth.contract(address=SILO_LENS_ADDRESS, abi=SILO_LENS_ABI)
                 
                 # Get Silo configuration and token info
-                silo_config_result = get_silo_config_address(deposit_token, borrow_token)
+                silo_config_result = get_silo_config_address(silo_deposit_token, borrow_token, id)
                 if isinstance(silo_config_result, dict) and "error" in silo_config_result:
                     return json.dumps({"error": f"Failed to get market configuration: {silo_config_result['error']}"})
                 
                 silo_config_address, is_deposit_token_silo0, deposit_token_address, deposit_token_decimals = silo_config_result
-                borrow_config_result = get_silo_config_address(borrow_token, deposit_token)
+                borrow_config_result = get_silo_config_address(borrow_token, silo_deposit_token, id)
                 _, _, borrow_token_address, borrow_token_decimals = borrow_config_result
-                
+
                 # Get the silo addresses based on token positions
                 token_idx = 0 if is_deposit_token_silo0 else 1
                 deposit_silo_address = self._agent.connection_manager.connections["silo"]._get_silo_address(
@@ -792,6 +883,17 @@ class SiloExitStrategyToolPrivy:
                 
                 logger.info(f"Deposit silo: {deposit_silo_address}")
                 logger.info(f"Borrow silo: {borrow_silo_address}")
+                
+                # Check initial wallet balances
+                initial_deposit_token_balance_wei = deposit_token_contract.functions.balanceOf(sender).call()
+                initial_deposit_token_balance = initial_deposit_token_balance_wei / (10 ** deposit_token_decimals)
+                initial_deposit_token_balance = float(f"{ceil_to_8_decimal(initial_deposit_token_balance)}")
+                
+                initial_borrow_token_balance_wei = borrow_token_contract.functions.balanceOf(sender).call()
+                initial_borrow_token_balance = initial_borrow_token_balance_wei / (10 ** borrow_token_decimals)
+                initial_borrow_token_balance = float(f"{ceil_to_8_decimal(initial_borrow_token_balance)}")
+                
+                logger.info(f"Initial wallet balances - {silo_deposit_token}: {initial_deposit_token_balance}, {borrow_token}: {initial_borrow_token_balance}")
                 
             except Exception as e:
                 logger.error(f"Error getting silo information: {str(e)}")
@@ -813,7 +915,7 @@ class SiloExitStrategyToolPrivy:
                 # Round to avoid precision issues
                 initial_collateral = float(f"{ceil_to_8_decimal(initial_collateral)}")
                 
-                logger.info(f"Initial collateral: {initial_collateral} {deposit_token}")
+                logger.info(f"Initial collateral: {initial_collateral} {silo_deposit_token}")
                 logger.info(f"Initial borrow: {initial_borrow} {borrow_token}")
                 
                 # If no positions, exit early
@@ -821,7 +923,7 @@ class SiloExitStrategyToolPrivy:
                     return json.dumps({
                         "status": "success",
                         "message": "No positions to unwind. Strategy already exited.",
-                        "deposit_token": deposit_token,
+                        "deposit_token": silo_deposit_token,
                         "borrow_token": borrow_token
                     })
                 
@@ -860,7 +962,7 @@ class SiloExitStrategyToolPrivy:
                     # Round to avoid precision issues
                     current_borrow = float(f"{ceil_to_8_decimal(current_borrow)}")
                     
-                    logger.info(f"Iteration {iteration}: Max withdrawable: {max_withdraw} {deposit_token}")
+                    logger.info(f"Iteration {iteration}: Max withdrawable: {max_withdraw} {silo_deposit_token}")
                     logger.info(f"Iteration {iteration}: Current borrow: {current_borrow} {borrow_token}")
                     
                     # Check if we're done
@@ -880,9 +982,10 @@ class SiloExitStrategyToolPrivy:
                             # Repay from wallet
                             repay_result = SiloRepayToolPrivy(self._agent, self._llm)._run(
                                 token_0=borrow_token,
-                                token_1=deposit_token,
+                                token_1=silo_deposit_token,
                                 amount=current_borrow,
-                                sender=sender
+                                sender=sender,
+                                id=id
                             )
                             
                             if isinstance(repay_result, str):
@@ -912,7 +1015,7 @@ class SiloExitStrategyToolPrivy:
                         break
                     
                     # Step 2: Withdraw available collateral
-                    withdraw_amount = max_withdraw * 0.95  # Leave a small buffer
+                    withdraw_amount = max_withdraw
                     # Round to avoid precision issues
                     withdraw_amount = float(f"{ceil_to_8_decimal(withdraw_amount)}")
                     
@@ -920,13 +1023,14 @@ class SiloExitStrategyToolPrivy:
                         logger.warning(f"Withdraw amount too small: {withdraw_amount}")
                         break
                     
-                    logger.info(f"Withdrawing {withdraw_amount} {deposit_token}")
+                    logger.info(f"Withdrawing {withdraw_amount} {silo_deposit_token}")
                     withdraw_result = SiloWithdrawToolPrivy(self._agent, self._llm)._run(
-                        token_0=deposit_token,
+                        token_0=silo_deposit_token,
                         token_1=borrow_token,
                         amount=withdraw_amount,
                         collateral_type=1,  # Collateral
-                        sender=sender
+                        sender=sender,
+                        id=id
                     )
                     
                     if isinstance(withdraw_result, str):
@@ -955,7 +1059,7 @@ class SiloExitStrategyToolPrivy:
                     # Round to avoid precision issues
                     deposit_token_balance = float(f"{ceil_to_8_decimal(deposit_token_balance)}")
                     
-                    swap_amount = min(deposit_token_balance * 0.98, deposit_token_balance)  # Use 98% of balance
+                    swap_amount = min(withdraw_amount, deposit_token_balance)  # Use 98% of balance
                     # Round to avoid precision issues
                     swap_amount = float(f"{ceil_to_8_decimal(swap_amount)}")
                     
@@ -966,7 +1070,7 @@ class SiloExitStrategyToolPrivy:
                         unwinding_steps.append(step_result)
                         break
                     
-                    logger.info(f"Swapping {swap_amount} {deposit_token} for {borrow_token}")
+                    logger.info(f"Swapping {swap_amount} {silo_deposit_token} for {borrow_token}")
                     
                     # Check borrow token balance before swap
                     borrow_token_balance_before_wei = borrow_token_contract.functions.balanceOf(sender).call()
@@ -983,7 +1087,7 @@ class SiloExitStrategyToolPrivy:
                             logger.info(f"Swap attempt {i+1} with slippage {current_slippage}%")
                             
                             swap_result = SonicSwapToolPrivy(self._agent, self._llm)._run(
-                                from_token=deposit_token if deposit_token.upper() != "S" else "wS",
+                                from_token=silo_deposit_token if silo_deposit_token.upper() != "S" else "wS",
                                 to_token=borrow_token if borrow_token.upper() != "S" else "wS",
                                 amount=swap_amount,
                                 sender=sender,
@@ -1039,7 +1143,7 @@ class SiloExitStrategyToolPrivy:
                     # Round to avoid precision issues
                     borrow_token_balance = float(f"{ceil_to_8_decimal(borrow_token_balance)}")
                     
-                    repay_amount = min(borrow_token_balance * 0.98, current_borrow)  # Repay up to 98% of balance or all debt
+                    repay_amount = min(borrow_token_balance - borrow_token_balance_before, current_borrow)  # Repay up to 98% of balance or all debt
                     # Round to avoid precision issues
                     repay_amount = float(f"{ceil_to_8_decimal(repay_amount)}")
                     
@@ -1053,9 +1157,10 @@ class SiloExitStrategyToolPrivy:
                     logger.info(f"Repaying {repay_amount} {borrow_token}")
                     repay_result = SiloRepayToolPrivy(self._agent, self._llm)._run(
                         token_0=borrow_token,
-                        token_1=deposit_token,
+                        token_1=silo_deposit_token,
                         amount=repay_amount,
-                        sender=sender
+                        sender=sender,
+                        id=id
                     )
                     
                     if isinstance(repay_result, str):
@@ -1121,9 +1226,102 @@ class SiloExitStrategyToolPrivy:
                 # Round to avoid precision issues
                 borrow_token_balance = float(f"{ceil_to_8_decimal(borrow_token_balance)}")
                 
-                logger.info(f"Final positions - Collateral: {final_collateral} {deposit_token}, Borrow: {final_borrow} {borrow_token}")
-                logger.info(f"Final wallet balances - {deposit_token}: {deposit_token_balance}, {borrow_token}: {borrow_token_balance}")
+                logger.info(f"Final positions - Collateral: {final_collateral} {silo_deposit_token}, Borrow: {final_borrow} {borrow_token}")
+                logger.info(f"Final wallet balances - {silo_deposit_token}: {deposit_token_balance}, {borrow_token}: {borrow_token_balance}")
                 
+                # Calculate net change in wallet balances
+                net_deposit_token_balance = deposit_token_balance - initial_deposit_token_balance
+                net_borrow_token_balance = borrow_token_balance - initial_borrow_token_balance
+                
+                logger.info(f"Net changes in wallet balances - {silo_deposit_token}: {net_deposit_token_balance}, {borrow_token}: {net_borrow_token_balance}")
+                
+                final_swaps = []
+                # Perform swaps to original deposit token if it's different from silo_deposit_token or borrow_token
+                if original_deposit_token.upper() not in [silo_deposit_token.upper(), borrow_token.upper()]:
+                    # Swap deposit token gains to original token if we have any
+                    if net_deposit_token_balance > 0.001:
+                        logger.info(f"Swapping {net_deposit_token_balance} {silo_deposit_token} to {original_deposit_token}")
+                        swap_result = SonicSwapToolPrivy(self._agent, self._llm)._run(
+                            from_token=silo_deposit_token if silo_deposit_token.upper() != "S" else "wS",
+                            to_token=original_deposit_token if original_deposit_token.upper() != "S" else "wS",
+                            amount=net_deposit_token_balance,
+                            sender=sender,
+                            slippage=swap_slippage
+                        )
+                        
+                        if "error" not in swap_result:
+                            final_swaps.append({
+                                "from_token": silo_deposit_token,
+                                "to_token": original_deposit_token,
+                                "amount": net_deposit_token_balance,
+                                "received": swap_result.get("amount_out", 0),
+                                "tx_hash": swap_result.get("tx")
+                            })
+                    
+                    # Swap borrow token gains to original token if we have any
+                    if net_borrow_token_balance > 0.001:
+                        logger.info(f"Swapping {net_borrow_token_balance} {borrow_token} to {original_deposit_token}")
+                        swap_result = SonicSwapToolPrivy(self._agent, self._llm)._run(
+                            from_token=borrow_token if borrow_token.upper() != "S" else "wS",
+                            to_token=original_deposit_token if original_deposit_token.upper() != "S" else "wS",
+                            amount=net_borrow_token_balance,
+                            sender=sender,
+                            slippage=swap_slippage
+                        )
+                        
+                        if "error" not in swap_result:
+                            final_swaps.append({
+                                "from_token": borrow_token,
+                                "to_token": original_deposit_token,
+                                "amount": net_borrow_token_balance,
+                                "received": swap_result.get("amount_out", 0),
+                                "tx_hash": swap_result.get("tx")
+                            })
+                
+                # If the original deposit token is same as silo_deposit_token
+                elif original_deposit_token.upper() == silo_deposit_token.upper():
+                    # Just swap borrow token balance if we have any
+                    if net_borrow_token_balance > 0.001:
+                        logger.info(f"Swapping {net_borrow_token_balance} {borrow_token} to {original_deposit_token}")
+                        swap_result = SonicSwapToolPrivy(self._agent, self._llm)._run(
+                            from_token=borrow_token if borrow_token.upper() != "S" else "wS",
+                            to_token=original_deposit_token if original_deposit_token.upper() != "S" else "wS",
+                            amount=net_borrow_token_balance,
+                            sender=sender,
+                            slippage=swap_slippage
+                        )
+                        
+                        if "error" not in swap_result:
+                            final_swaps.append({
+                                "from_token": borrow_token,
+                                "to_token": original_deposit_token,
+                                "amount": net_borrow_token_balance,
+                                "received": swap_result.get("amount_out", 0),
+                                "tx_hash": swap_result.get("tx")
+                            })
+                
+                # If the original deposit token is same as borrow_token
+                elif original_deposit_token.upper() == borrow_token.upper():
+                    # Just swap deposit token balance if we have any
+                    if net_deposit_token_balance > 0.001:
+                        logger.info(f"Swapping {net_deposit_token_balance} {silo_deposit_token} to {original_deposit_token}")
+                        swap_result = SonicSwapToolPrivy(self._agent, self._llm)._run(
+                            from_token=silo_deposit_token if silo_deposit_token.upper() != "S" else "wS",
+                            to_token=original_deposit_token if original_deposit_token.upper() != "S" else "wS",
+                            amount=net_deposit_token_balance,
+                            sender=sender,
+                            slippage=swap_slippage
+                        )
+                        
+                        if "error" not in swap_result:
+                            final_swaps.append({
+                                "from_token": silo_deposit_token,
+                                "to_token": original_deposit_token,
+                                "amount": net_deposit_token_balance,
+                                "received": swap_result.get("amount_out", 0),
+                                "tx_hash": swap_result.get("tx")
+                            })
+
                 # claim rewards
                 claim_rewards_result = SiloClaimRewardsToolPrivy(self._agent, self._llm)._run(sender)
                 
@@ -1137,21 +1335,48 @@ class SiloExitStrategyToolPrivy:
                         "total_deposited": float(f"{ceil_to_8_decimal(total_deposited)}")
                     },
                     "unwinding_steps": unwinding_steps,
+                    "final_swaps": final_swaps,
                     "iterations_executed": iteration - 1,
                     "initial_state": {
                         "collateral_balance": float(f"{ceil_to_8_decimal(initial_collateral)}"),
-                        "borrow_balance": float(f"{ceil_to_8_decimal(initial_borrow)}")
+                        "borrow_balance": float(f"{ceil_to_8_decimal(initial_borrow)}"),
+                        "wallet_balances": {
+                            silo_deposit_token: initial_deposit_token_balance,
+                            borrow_token: initial_borrow_token_balance
+                        }
                     },
                     "final_state": {
                         "collateral_balance": float(f"{ceil_to_8_decimal(final_collateral)}"),
                         "borrow_balance": float(f"{ceil_to_8_decimal(final_borrow)}"),
                         "wallet_balances": {
-                            deposit_token: float(f"{ceil_to_8_decimal(deposit_token_balance)}"),
+                            silo_deposit_token: float(f"{ceil_to_8_decimal(deposit_token_balance)}"),
                             borrow_token: float(f"{ceil_to_8_decimal(borrow_token_balance)}")
                         }
                     },
                     "fully_unwound": (final_collateral <= 0.001 and final_borrow <= 0.001),
                     "claim_rewards_tx": claim_rewards_result.get("tx_hash")
+                }
+                
+
+                # Add original deposit token information
+                need_conversion = False
+                if original_deposit_token.upper() != silo_deposit_token.upper():
+                    # If the original deposit token is S but we have wS
+                    if original_deposit_token.upper() == "S" and silo_deposit_token.upper() == "S":
+                        result["final_state"]["note"] = "Your original deposit was in S but you received wS. To convert back to S, you would need to use the unwrap function which is not available through this tool."
+                        need_conversion = True
+                    # If the original deposit token is different from the silo deposit token
+                    elif len(final_swaps) == 0:  # Only add this note if we couldn't swap back automatically
+                        result["final_state"]["note"] = f"Your original deposit was in {original_deposit_token} but you received {silo_deposit_token}. To convert back, you would need to swap."
+                        need_conversion = True
+                
+                # Add token conversion details
+                result["token_info"] = {
+                    "original_deposit_token": original_deposit_token,
+                    "silo_deposit_token": silo_deposit_token,
+                    "borrow_token": borrow_token,
+                    "needs_conversion": need_conversion,
+                    "auto_converted": len(final_swaps) > 0
                 }
                 
                 return json.dumps(result, indent=2)

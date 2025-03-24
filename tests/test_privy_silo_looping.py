@@ -57,7 +57,7 @@ class MockLLM:
     """Mock LLM for testing"""
     pass
 
-def test_silo_looping(token_pair, initial_amount, sender, loops=3, borrow_percentage=95):
+def test_silo_looping(token_pair, initial_amount, sender, loops=3, borrow_percentage=95, id = 0, deposit_token="S"):
     """Test Privy Silo looping strategy functionality"""
     try:
         # Create mock agent and LLM
@@ -73,7 +73,9 @@ def test_silo_looping(token_pair, initial_amount, sender, loops=3, borrow_percen
             initial_amount=float(initial_amount),
             sender=sender,
             loops=int(loops),
-            borrow_percentage=float(borrow_percentage)
+            borrow_percentage=float(borrow_percentage),
+            id=int(id),
+            deposit_token=deposit_token
         )
         
         # Log the result
@@ -102,6 +104,8 @@ if __name__ == "__main__":
     parser.add_argument("--loops", "-l", default=3, help="Maximum number of loops to execute (default: 3)")
     parser.add_argument("--borrow-percentage", "-b", default=95, 
                         help="Percentage of max borrow to use in each loop (default: 95)")
+    parser.add_argument("--id", "-i", default=0, help="Makret ID for the test run")
+    parser.add_argument("--deposit-token", "-d", default="S", help="Token to deposit (default: S)")
     
     args = parser.parse_args()
     
@@ -110,5 +114,7 @@ if __name__ == "__main__":
         initial_amount=args.amount,
         sender=args.sender,
         loops=args.loops,
-        borrow_percentage=args.borrow_percentage
+        borrow_percentage=args.borrow_percentage,
+        id=args.id,
+        deposit_token=args.deposit_token
     )

@@ -1,7 +1,7 @@
 import json
 import logging
 from web3 import Web3
-from src.tools.sonic_tools import SonicTokenLookupTool, SonicSwapTool
+from src.tools.sonic_tools import SonicTokenLookupTool, SonicSwapTool, SonicWrapTool
 from src.constants.abi import ERC20_ABI
 from src.action_handler import execute_action
 from .helpers import approve_token, execute
@@ -164,8 +164,84 @@ class SonicSwapToolPrivy(SonicSwapTool):
             logger.error(f"Error in Privy Sonic swap: {str(e)}")
             return ({"error": f"Swap failed: {str(e)}"})
 
+class SonicWrapToolPrivy(SonicWrapTool):
+    name: str = "privy_sonic_wrap"
+    description: str = """
+    privy_sonic_wrap: Wrap tokens via Privy wallet
+    Example: For "Wrap 100 S(sonic)", use: {"amount": 100, "sender": "0xYourWalletAddress"}
+    - sender: Your wallet address
+    - amount: amount to wrap
+    """
+
+    def _run(self, amount: float, sender: str) -> str:
+        try:
+            logger.info(f"Wrapping {amount} S tokens via Privy wallet")
+            
+            wrap_params = {
+                "sender": sender,
+                "amount": float(amount)
+            }
+            
+            # Get wrap transaction data
+            try:
+                wrap_tx = execute_action(
+                    agent=self._agent,
+                    action_name="wrap-sonic",
+                    **wrap_params
+                )
+                logger.info(wrap_tx)
+                if not wrap_tx:
+                    return ({"error": "Failed to generate wrap transaction data"})
+                
+                # Check if there's an error message
+                if isinstance(wrap_tx, str):
+                    return ({"error": wrap_tx})
+                
+            except Exception as e:
+                logger.error(f"Failed to generate wrap transaction: {str(e)}")
+                return ({"error": f"Failed to generate wrap transaction: {str(e)}"})
+            
+            # Execute the wrap transaction with Privy
+            amount_in_wei = int(float(amount) * 10**18)  # Convert to wei
+            auth_message = f"I authorize wrapping {amount} S tokens"
+            
+            wrap_result = execute(
+                self._agent.connection_manager.connections["privy"],
+                sender,
+                wrap_tx["to"],
+                "0x",
+                amount_in_wei,  # Send value since we're wrapping S
+                "wrap",
+                auth_message
+            )
+            
+            if "error" in wrap_result:
+                return ({"error": wrap_result["error"]})
+            
+            # Build success result
+            result = {
+                "status": "success",
+                "type": "wrap",
+                "amount": amount,
+                "tx": wrap_result.get("tx_hash"),
+                "details": wrap_params,
+                "wrap": {
+                    "tx_hash": wrap_result.get("tx_hash"),
+                    "receipt": wrap_result.get("receipt"),
+                    "success": wrap_result.get("success", False),
+                    "gas_stats": wrap_result.get("gas_stats")
+                }
+            }
+            
+            return (result)
+            
+        except Exception as e:
+            logger.error(f"Error in Privy Sonic wrap: {str(e)}")
+            return ({"error": f"Wrap failed: {str(e)}"})
+
 def get_privy_sonic_tools(agent, llm) -> list:
     """Return a list of all Privy Sonic-related tools."""
     return [
         SonicSwapToolPrivy(agent, llm),
+        SonicWrapToolPrivy(agent, llm),
     ]
