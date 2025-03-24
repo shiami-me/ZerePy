@@ -266,7 +266,7 @@ class PendleAddLiquidityTool(BaseTool):
             if token_address:
                 # Check if the token is in the market's input tokens
                 input_tokens = [self._agent.connection_manager.connections["pendle"].parse_token_id(t)['address'].lower() 
-                               for t in target_market.get('inputTokens', [])]
+                               for t in target_market.get('tokensMintSy', [])]
                 input_tokens.append(self._agent.connection_manager.connections["pendle"].parse_token_id(target_market.get('sy'))['address'].lower())
                 enable_aggregator = token_address.lower() not in input_tokens
             
@@ -394,7 +394,7 @@ class PendleAddLiquidityDualTool(BaseTool):
             if token_address:
                 # Check if the token is in the market's input tokens
                 input_tokens = [self._agent.connection_manager.connections["pendle"].parse_token_id(t)['address']
-                               for t in target_market.get('inputTokens', [])]
+                               for t in target_market.get('tokensMintSy', [])]
                 input_tokens.append(self._agent.connection_manager.connections["pendle"].parse_token_id(target_market.get('sy'))['address'])
                 if token_address not in input_tokens:
                     return f"Error: Token '{token_symbol}' is not a valid input token for market '{market_symbol}'"
@@ -481,7 +481,7 @@ class PendleRemoveLiquidityTool(BaseTool):
                 return f"Error: No Pendle market found with symbol '{market_symbol}'"
             
             market_address = target_market['address']
-            market_output_tokens = target_market.get('outputTokens', [])
+            market_output_tokens = target_market.get('tokensRedeemSy', [])
             market_output_tokens.append(target_market.get('sy', ''))
             # Step 2: Find the output token by symbol and type
             assets = self._agent.connection_manager.connections["pendle"].get_assets()
@@ -605,7 +605,7 @@ class PendleRemoveLiquidityDualTool(BaseTool):
                 return f"Error: No Pendle market found with symbol '{market_symbol}'"
             
             market_address = target_market['address']
-            market_output_tokens = target_market.get('outputTokens', [])
+            market_output_tokens = target_market.get('tokensRedeemSy', [])
             market_output_tokens.append(target_market.get('sy', ''))
             # Step 2: Find the output token by symbol and type
             assets = self._agent.connection_manager.connections["pendle"].get_assets()
@@ -732,8 +732,8 @@ class PendleSwapTool(BaseTool):
                 return f"Error: No Pendle market found with symbol '{market_symbol}'"
             
             market_address = target_market['address']
-            market_input_tokens = target_market.get('inputTokens', [])
-            market_output_tokens = target_market.get('outputTokens', [])
+            market_input_tokens = target_market.get('tokensMintSy', [])
+            market_output_tokens = target_market.get('tokensRedeemSy', [])
             market_input_tokens.append(target_market.get('sy', ''))
             market_output_tokens.append(target_market.get('sy', ''))
             # Step 2: Find the input token by symbol and type
@@ -926,7 +926,7 @@ class PendleMintSyTool(BaseTool):
                 if market.get('sy') == sy_address:
                     input_tokens = [
                         self._agent.connection_manager.connections["pendle"].parse_token_id(t)['address'].lower() 
-                        for t in market.get('inputTokens', [])
+                        for t in market.get('tokensMintSy', [])
                     ]
                     if token_in_address.lower() in input_tokens:
                         enable_aggregator = False
@@ -1045,7 +1045,7 @@ class PendleMintPyTool(BaseTool):
             enable_aggregator = True
             input_tokens = [
                 self._agent.connection_manager.connections["pendle"].parse_token_id(t)['address'].lower() 
-                for t in target_market.get('inputTokens', [])
+                for t in target_market.get('tokensMintSy', [])
             ]
             input_tokens.append(self._agent.connection_manager.connections["pendle"].parse_token_id(target_market.get('sy'))['address'].lower())
             
@@ -1180,7 +1180,7 @@ class PendleRedeemSyTool(BaseTool):
                 if market.get('sy') == sy_address:
                     output_tokens = [
                         self._agent.connection_manager.connections["pendle"].parse_token_id(t)['address'].lower() 
-                        for t in market.get('outputTokens', [])
+                        for t in market.get('tokensRedeemSy', [])
                     ]
                     
                     if token_out_address.lower() in output_tokens:
@@ -1299,7 +1299,7 @@ class PendleRedeemPyTool(BaseTool):
             enable_aggregator = True
             output_tokens = [
                 self._agent.connection_manager.connections["pendle"].parse_token_id(t)['address'].lower() 
-                for t in target_market.get('outputTokens', [])
+                for t in target_market.get('tokensRedeemSy', [])
             ]
             output_tokens.append(self._agent.connection_manager.connections["pendle"].parse_token_id(target_market.get('sy'))['address'].lower())
             

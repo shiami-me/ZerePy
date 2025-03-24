@@ -220,7 +220,7 @@ def execute(privy, from_address, to_address, data, value=0, action_name="transac
         except Exception as e:
             logger.warning(
                 f"Gas estimation for {action_name} failed: {str(e)}. Using default.")
-            gas_with_buffer = 300000
+            raise e
         
         # Get nonce
         nonce = w3.eth.get_transaction_count(from_address)

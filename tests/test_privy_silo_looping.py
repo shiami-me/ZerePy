@@ -12,6 +12,7 @@ from src.tools.privy.silo_tools import SiloLoopingStrategyToolPrivy
 from src.connections.privy_connection import PrivyConnection
 from src.connections.silo_connection import SiloConnection
 from src.connections.sonic_connection import SonicConnection
+from src.connections.pendle_connection import PendleConnection
 
 # Configure logging
 logging.basicConfig(
@@ -52,6 +53,7 @@ class MockConnectionManager:
         self.connections["sonic"] = SonicConnection({
             "network": "anvil"
         })
+        self.connections["pendle"] = PendleConnection({})
 
 class MockLLM:
     """Mock LLM for testing"""

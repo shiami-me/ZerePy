@@ -202,25 +202,54 @@ class PendleConnection(BaseConnection):
     def get_markets(self) -> List[Dict[str, Any]]:
         """
         Fetches all markets for a given chain ID and transforms the response
-        from list format to proper market objects
+        to proper market objects
         """
         try:
-            url = f"{self.api_url}/bff/v3/markets/all?chainId=146&select=all"
+            # Use the new API endpoint
+            url = f"{self.api_url}/core/v1/146/markets"
             response = requests.get(url)
             response.raise_for_status()
             data = response.json()
             
-            return self._transform_markets_response(data)
+            return self._transform_markets_response(data.get('results', []))
         except Exception as e:
             raise PendleConnectionError(f"Failed to fetch Pendle markets: {str(e)}")
+
+    def get_market_tokens(self, market_address: str, chain_id: int = 146) -> Dict[str, List[str]]:
+        """
+        Fetches token lists for a specific market
+        """
+        try:
+            url = f"{self.api_url}/core/v1/sdk/{chain_id}/markets/{market_address}/tokens"
+            
+            response = requests.get(url)
+            response.raise_for_status()
+            data = response.json()
+            
+            return {
+                'tokensMintSy': data.get('tokensMintSy', []),
+                'tokensRedeemSy': data.get('tokensRedeemSy', []),
+                'tokensIn': data.get('tokensIn', []),
+                'tokensOut': data.get('tokensOut', [])
+            }
+        except Exception as e:
+            logger.error(f"Error fetching tokens for market {market_address}: {str(e)}")
+            # Return empty arrays if there's an error
+            return {
+                'tokensMintSy': [],
+                'tokensRedeemSy': [],
+                'tokensIn': [],
+                'tokensOut': []
+            }
 
     def get_assets(self) -> List[Dict[str, Any]]:
         """
         Fetches all assets for a given chain ID and transforms the response
-        from list format to proper asset objects
+        to proper asset objects
         """
         try:
-            url = f"{self.api_url}/bff/v3/assets/all?chainId=146"
+            # Use the new API endpoint
+            url = f"{self.api_url}/core/v1/146/assets/all"
             response = requests.get(url)
             response.raise_for_status()
             data = response.json()
@@ -250,68 +279,104 @@ class PendleConnection(BaseConnection):
         except Exception as e:
             raise PendleConnectionError(f"Error parsing token ID: {str(e)}")
 
-    def _transform_markets_response(self, response: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _transform_markets_response(self, markets_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Transforms the list-based API response into an array of market objects
+        Transforms the new API response into an array of market objects with the old structure
         """
         markets = []
-        chain_id_list = response.get('chainIdList', [])
         
-        for i in range(len(chain_id_list)):
-            # Skip if there's no liquidity data
-            if not response.get('liquidityList') or i >= len(response.get('liquidityList')):
+        for market_data in markets_data:
+            # Get the market address and fetch token lists
+            market_address = market_data.get('address')
+            if not market_address:
                 continue
                 
+            # Fetch token lists for this market
+            token_lists = self.get_market_tokens(market_address)
+            
+            # Extract nested data
+            pt_address = market_data.get('pt', {}).get('address', '')
+            yt_address = market_data.get('yt', {}).get('address', '')
+            sy_address = market_data.get('sy', {}).get('address', '')
+            accounting_asset = market_data.get('accountingAsset', {}).get('address', '')
+            underlying_asset = market_data.get('underlyingAsset', {}).get('address', '')
+            
+            # Extract icon
+            icon = market_data.get('proIcon') or market_data.get('simpleIcon') or ''
+            
+            # Extract liquidity and volume
+            liquidity = market_data.get('liquidity', {}).get('usd', 0)
+            trading_volume = market_data.get('tradingVolume', {}).get('usd', 0)
+            
+            # Extract reward tokens
+            reward_tokens = []
+            for reward in market_data.get('estimatedDailyPoolRewards', []):
+                if isinstance(reward, dict):
+                    reward_tokens.append({
+                        'asset': reward.get('asset', ''),
+                        'amount': reward.get('amount', 0)
+                    })
+            
+            # Create market object with the old structure plus new token fields
             market = {
-                'chainId': response.get('chainIdList', [])[i] if i < len(response.get('chainIdList', [])) else None,
-                'address': response.get('addressList', [])[i] if i < len(response.get('addressList', [])) else None,
-                'symbol': response.get('symbolList', [])[i] if i < len(response.get('symbolList', [])) else None,
-                'expiry': response.get('expiryList', [])[i] if i < len(response.get('expiryList', [])) else None,
-                'icon': response.get('iconList', [])[i] if i < len(response.get('iconList', [])) else None,
-                'pt': response.get('ptList', [])[i] if i < len(response.get('ptList', [])) else None,
-                'yt': response.get('ytList', [])[i] if i < len(response.get('ytList', [])) else None,
-                'sy': response.get('syList', [])[i] if i < len(response.get('syList', [])) else None,
-                'accountingAsset': response.get('accountingAssetList', [])[i] if i < len(response.get('accountingAssetList', [])) else None,
-                'underlyingAsset': response.get('underlyingAssetList', [])[i] if i < len(response.get('underlyingAssetList', [])) else None,
-                'rewardTokens': response.get('rewardTokensList', [])[i] if i < len(response.get('rewardTokensList', [])) else [],
-                'inputTokens': response.get('inputTokensList', [])[i] if i < len(response.get('inputTokensList', [])) else [],
-                'outputTokens': response.get('outputTokensList', [])[i] if i < len(response.get('outputTokensList', [])) else [],
-                'protocol': response.get('protocolList', [])[i] if i < len(response.get('protocolList', [])) else None,
-                'underlyingPool': response.get('underlyingPoolList', [])[i] if i < len(response.get('underlyingPoolList', [])) else None,
-                'liquidity': response.get('liquidityList', [])[i] if i < len(response.get('liquidityList', [])) else None,
-                'tradingVolume': response.get('tradingVolumeList', [])[i] if i < len(response.get('tradingVolumeList', [])) else None,
-                'underlyingApy': response.get('underlyingApyList', [])[i] if i < len(response.get('underlyingApyList', [])) else None,
-                'impliedApy': response.get('impliedApyList', [])[i] if i < len(response.get('impliedApyList', [])) else None,
-                'ytFloatingApy': response.get('ytFloatingApyList', [])[i] if i < len(response.get('ytFloatingApyList', [])) else None,
-                'ptDiscount': response.get('ptDiscountList', [])[i] if i < len(response.get('ptDiscountList', [])) else None,
-                'isNew': response.get('isNewList', [])[i] if i < len(response.get('isNewList', [])) else None,
-                'isFeatured': response.get('isFeaturedList', [])[i] if i < len(response.get('isFeaturedList', [])) else None,
-                'isActive': response.get('isActiveList', [])[i] if i < len(response.get('isActiveList', [])) else None,
+                'chainId': market_data.get('chainId', 146),
+                'address': market_address,
+                'symbol': market_data.get('proSymbol') or market_data.get('symbol', ''),
+                'expiry': market_data.get('expiry'),
+                'icon': icon,
+                'pt': pt_address,
+                'yt': yt_address,
+                'sy': sy_address,
+                'accountingAsset': accounting_asset,
+                'underlyingAsset': underlying_asset,
+                'rewardTokens': reward_tokens,
+                'inputTokens': token_lists['tokensIn'],
+                'outputTokens': token_lists['tokensOut'],
+                # Add the new token fields
+                'tokensMintSy': token_lists['tokensMintSy'],
+                'tokensRedeemSy': token_lists['tokensRedeemSy'],
+                'protocol': market_data.get('protocol', ''),
+                'underlyingPool': market_data.get('underlyingPool', ''),
+                'liquidity': liquidity,
+                'tradingVolume': trading_volume,
+                'underlyingApy': market_data.get('underlyingApy', 0),
+                'impliedApy': market_data.get('impliedApy', 0),
+                'ytFloatingApy': market_data.get('ytFloatingApy', 0),
+                'ptDiscount': market_data.get('ptDiscount', 0),
+                'isNew': market_data.get('isNew', False),
+                'isFeatured': market_data.get('isFeatured', False),
+                'isActive': market_data.get('isActive', True),
             }
             
             markets.append(market)
         
         return markets
 
-    def _transform_assets_response(self, response: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _transform_assets_response(self, assets_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Transforms the list-based assets API response into an array of asset objects
+        Transforms the new assets API response into an array of asset objects with the old structure
         """
         assets = []
-        chain_id_list = response.get('chainIdList', [])
         
-        for i in range(len(chain_id_list)):
+        for asset_data in assets_data:
+            # Extract data from the new asset structure
             asset = {
-                'chainId': response.get('chainIdList', [])[i] if i < len(response.get('chainIdList', [])) else None,
-                'address': response.get('addressList', [])[i] if i < len(response.get('addressList', [])) else None,
-                'symbol': response.get('symbolList', [])[i] if i < len(response.get('symbolList', [])) else None,
-                'icon': response.get('iconList', [])[i] if i < len(response.get('iconList', [])) else None,
-                'decimals': response.get('decimalsList', [])[i] if i < len(response.get('decimalsList', [])) else None,
-                'price': response.get('priceList', [])[i] if i < len(response.get('priceList', [])) else None,
-                'type': response.get('typeList', [])[i] if i < len(response.get('typeList', [])) else None,
-                'underlyingPool': response.get('underlyingPoolList', [])[i] if i < len(response.get('underlyingPoolList', [])) else None,
-                'zappable': response.get('zappableList', [])[i] if i < len(response.get('zappableList', [])) else None,
-                'expiry': response.get('expiryList', [])[i] if i < len(response.get('expiryList', [])) else None,
+                'chainId': asset_data.get('chainId', 146),
+                'address': asset_data.get('address', ''),
+                'symbol': asset_data.get('symbol', ''),
+                # Use simpleIcon or proIcon as the icon source
+                'icon': asset_data.get('simpleIcon') or asset_data.get('proIcon') or '',
+                'decimals': asset_data.get('decimals', 18),
+                # Map price.usd to price
+                'price': asset_data.get('price', {}).get('usd', None),
+                # Use baseType as the type if available, otherwise use the first type from types array
+                'type': asset_data.get('baseType') or 
+                       (asset_data.get('types', [''])[0] if asset_data.get('types') else ''),
+                # No direct mapping for underlyingPool in the new response
+                'underlyingPool': asset_data.get('underlyingPool', None),
+                'zappable': asset_data.get('zappable', False),
+                # No direct expiry field in the response, default to None
+                'expiry': asset_data.get('expiry', None)
             }
             
             assets.append(asset)

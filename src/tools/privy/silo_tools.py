@@ -6,6 +6,7 @@ from web3 import Web3
 from src.constants.abi import ERC20_ABI, SILO_ABI
 from .helpers import approve_token, execute
 from decimal import Decimal, ROUND_FLOOR, getcontext
+from .pendle_tools import PendleSwapToolPrivy
 
 def ceil_to_8_decimal(number):
     getcontext().prec = 10 
@@ -356,33 +357,141 @@ class SiloLoopingStrategyToolPrivy(SiloLoopingStrategyTool):
             # Initialize web3 connection
             w3 = Web3(Web3.HTTPProvider("http://localhost:8545"))
             
+            # Check if deposit token is a Pendle PT token
+            is_pt_token = False
+            pt_market = None
+            
+            if silo_deposit_token.startswith("PT-"):
+                is_pt_token = True
+                # Extract the market name from PT token (e.g., "PT-wstkscUSD (29 May)" -> "wstkscUSD")
+                if "(" in silo_deposit_token:
+                    pt_market = silo_deposit_token.split('-')[1].split('(')[0].strip()
+                else:
+                    pt_market = silo_deposit_token.split('-')[1].strip()
+                
+                logger.info(f"Detected PT token for market: {pt_market}")
+            
             # Check if we need to swap the deposit token to silo_deposit_token
             swapped = False
+            wrapped = False
+            deposit_token_contract = w3.eth.contract(address=deposit_token_address, abi=ERC20_ABI)
             
             if deposit_token.upper() != silo_deposit_token.upper():
-                # Need to swap deposit_token to silo_deposit_token first
-                logger.info(f"Swapping {initial_amount} {deposit_token} to {silo_deposit_token}")
+                # If the silo deposit token is a PT token, we need to swap to PT
+                if is_pt_token:
+                    # For PT token swap, check initial balance before swap
+                    deposit_token_balance_before_wei = deposit_token_contract.functions.balanceOf(sender).call()
+                    deposit_token_balance_before = deposit_token_balance_before_wei / (10 ** deposit_token_decimals)
+                    logger.info(f"Balance before Pendle swap: {deposit_token_balance_before} {silo_deposit_token}")
+
+                    # Implement retry logic for Pendle swap
+                    swap_success = False
+                    for i in range(5):  # Try up to 5 times with increasing slippage
+                        try:
+                            current_slippage = 0.01 + (i * 0.005)  # Start at 1% and increase by 0.5% each retry
+                            logger.info(f"Pendle swap attempt {i+1} with slippage {current_slippage}")
+                            
+                            # Use PendleSwapToolPrivy to swap deposit_token to PT
+                            swap_result = PendleSwapToolPrivy(self._agent)._run(
+                                market_symbol=pt_market,
+                                token_in_symbol=deposit_token,
+                                token_out_symbol="PT",
+                                amount_in=str(initial_amount),
+                                user_address=sender,
+                                slippage=current_slippage  # Pendle uses 0-1 scale (0.01 = 1%)
+                            )
+                            
+                            if isinstance(swap_result, str):
+                                try:
+                                    swap_result = json.loads(swap_result)
+                                except:
+                                    pass
+                            
+                            if "error" not in swap_result and swap_result.get("success", False):
+                                # Check deposit token balance after swap to get actual received amount
+                                deposit_token_balance_after_wei = deposit_token_contract.functions.balanceOf(sender).call()
+                                deposit_token_balance_after = deposit_token_balance_after_wei / (10 ** deposit_token_decimals)
+                                
+                                # Calculate actual amount received based on balance difference
+                                amount_to_deposit = deposit_token_balance_after - deposit_token_balance_before
+                                amount_to_deposit = float(f"{ceil_to_8_decimal(amount_to_deposit)}")
+                                
+                                logger.info(f"Balance after Pendle swap: {deposit_token_balance_after} {silo_deposit_token}")
+                                logger.info(f"Actual Pendle swap output: {amount_to_deposit} {silo_deposit_token}")
+                                
+                                if amount_to_deposit > 0.00001:
+                                    swap_success = True
+                                    logger.info(f"Pendle swap successful on attempt {i+1}: Got {amount_to_deposit} {silo_deposit_token}")
+                                    break
+                                else:
+                                    logger.warning(f"Pendle swap output too small: {amount_to_deposit}")
+                            else:
+                                error_msg = swap_result.get("error", "Unknown error") if swap_result else "Empty swap result"
+                                logger.warning(f"Pendle swap attempt {i+1} failed: {error_msg}")
+                        except Exception as swap_error:
+                            logger.warning(f"Exception during Pendle swap attempt {i+1}: {str(swap_error)}")
+                    if not swap_success:
+                        return json.dumps({"error": f"Failed to swap deposit token to PT after multiple attempts"})
+                    
+                    logger.info(f"Will deposit {amount_to_deposit} {silo_deposit_token} after Pendle swap")
+                    swapped = True
+                else:
+                    # Need to swap deposit_token to silo_deposit_token first (non-PT case)
+                    logger.info(f"Swapping {initial_amount} {deposit_token} to {silo_deposit_token}")
                 
-                # Special case: if silo_deposit_token is S/wS, we'll get wS after swap
-                swap_to_token = silo_deposit_token
-                if silo_deposit_token.upper() == "S":
-                    swap_to_token = "wS"
-                
-                swap_result = SonicSwapToolPrivy(self._agent, "")._run(
-                    from_token=deposit_token if deposit_token.upper() != "S" else "wS",
-                    to_token=swap_to_token,
-                    amount=initial_amount,
-                    sender=sender,
-                    slippage=0.5
-                )
-                
-                if "error" in swap_result:
-                    return json.dumps({"error": f"Failed to swap deposit token: {swap_result['error']}"})
-                
-                logger.info(f"Swap result: {swap_result}")
-                swapped = True
-                amount_to_deposit = swap_result["amount_out"]
-                logger.info(f"Will deposit {amount_to_deposit} {silo_deposit_token} after swap")
+                    # Special case: if silo_deposit_token is S/wS, we'll get wS after swap
+                    swap_to_token = silo_deposit_token
+                    if silo_deposit_token.upper() == "S":
+                        swap_to_token = "wS"
+                    
+                    # Check deposit token balance before swap
+                    deposit_token_balance_before_wei = deposit_token_contract.functions.balanceOf(sender).call()
+                    deposit_token_balance_before = deposit_token_balance_before_wei / (10 ** deposit_token_decimals)
+                    logger.info(f"Balance before Sonic swap: {deposit_token_balance_before} {silo_deposit_token}")
+
+                    # Implement retry logic for Sonic swap
+                    swap_success = False
+                    for i in range(5):  # Try up to 5 times with increasing slippage
+                        try:
+                            current_slippage = 0.5 + (i * 0.5)  # Start at 0.5% and increase by 0.5% each retry
+                            logger.info(f"Sonic swap attempt {i+1} with slippage {current_slippage}%")
+                            
+                            swap_result = SonicSwapToolPrivy(self._agent, "")._run(
+                                from_token=deposit_token if deposit_token.upper() != "S" else "wS",
+                                to_token=swap_to_token,
+                                amount=initial_amount,
+                                sender=sender,
+                                slippage=current_slippage  # Sonic uses percentage (0.5 = 0.5%)
+                            )
+                            
+                            if "error" not in swap_result and swap_result.get("success", False):
+                                # Check deposit token balance after swap to get actual received amount
+                                deposit_token_balance_after_wei = deposit_token_contract.functions.balanceOf(sender).call()
+                                deposit_token_balance_after = deposit_token_balance_after_wei / (10 ** deposit_token_decimals)
+                                
+                                # Calculate actual amount received based on balance difference
+                                amount_to_deposit = deposit_token_balance_after - deposit_token_balance_before
+                                amount_to_deposit = float(f"{ceil_to_8_decimal(amount_to_deposit)}")
+                                
+                                logger.info(f"Balance after Sonic swap: {deposit_token_balance_after} {silo_deposit_token}")
+                                logger.info(f"Actual Sonic swap output: {amount_to_deposit} {silo_deposit_token}")
+                                
+                                if amount_to_deposit > 0.00001:
+                                    swap_success = True
+                                    logger.info(f"Sonic swap successful on attempt {i+1}: Got {amount_to_deposit} {silo_deposit_token}")
+                                    break
+                                else:
+                                    logger.warning(f"Sonic swap output too small: {amount_to_deposit}")
+                            else:
+                                error_msg = swap_result.get("error", "Unknown error") if swap_result else "Empty swap result"
+                                logger.warning(f"Sonic swap attempt {i+1} failed: {error_msg}")
+                        except Exception as swap_error:
+                            logger.warning(f"Exception during Sonic swap attempt {i+1}: {str(swap_error)}")
+                    if not swap_success:
+                        return json.dumps({"error": f"Failed to swap deposit token after multiple attempts"})
+                    
+                    logger.info(f"Will deposit {amount_to_deposit} {silo_deposit_token} after swap")
+                    swapped = True
             
             # Check if we need to wrap S to wS for Silo
             elif silo_deposit_token.upper() == "S":
@@ -487,45 +596,100 @@ class SiloLoopingStrategyToolPrivy(SiloLoopingStrategyTool):
                     # Fix swap retry mechanism with proper structure
                     swap_success = False
                     
-                    for i in range(10):  # Try up to 10 times with increasing slippage
+                    # If dealing with PT token, swap using Pendle
+                    if is_pt_token:
                         try:
-                            current_slippage = 0.5 + (i * 0.5)  # Start at 0.5% and increase by 0.5% each retry
-                            logger.info(f"Swap attempt {i+1} with slippage {current_slippage}%")
+                            logger.info(f"Swapping to PT token using Pendle swap: {borrow_amount} {borrow_token} to PT")
                             
-                            swap_result = SonicSwapToolPrivy(self._agent, "")._run(
-                                from_token=borrow_token if borrow_token.upper() != "S" else "wS",
-                                to_token=silo_deposit_token if silo_deposit_token.upper() != "S" else "wS",
-                                amount=borrow_amount,
-                                sender=sender,
-                                slippage=current_slippage
-                            )
+                            # Implement retry logic for Pendle swap
+                            swap_success = False
+                            for i in range(5):  # Try up to 5 times with increasing slippage
+                                try:
+                                    current_slippage = 0.01 + (i * 0.005)  # Start at 1% and increase by 0.5% each retry
+                                    logger.info(f"Pendle swap attempt {i+1} with slippage {current_slippage}")
+                                    
+                                    swap_result = PendleSwapToolPrivy(self._agent)._run(
+                                        market_symbol=pt_market,
+                                        token_in_symbol=borrow_token,
+                                        token_out_symbol="PT",
+                                        amount_in=str(borrow_amount),
+                                        user_address=sender,
+                                        slippage=current_slippage  # Pendle uses 0-1 scale (0.01 = 1%)
+                                    )
+                                    
+                                    if isinstance(swap_result, str):
+                                        try:
+                                            swap_result = json.loads(swap_result)
+                                        except:
+                                            pass
+                                    
+                                    if "error" not in swap_result and swap_result.get("success", False):
+                                        # Check deposit token balance after swap
+                                        deposit_token_balance_after_wei = deposit_token_contract.functions.balanceOf(sender).call()
+                                        deposit_token_balance_after = deposit_token_balance_after_wei / (10 ** deposit_token_decimals)
+                                        
+                                        # Calculate amount received
+                                        deposit_amount = deposit_token_balance_after - deposit_token_balance_before
+                                        deposit_amount = float(f"{ceil_to_8_decimal(deposit_amount)}")
+                                        
+                                        logger.info(f"Balance after Pendle swap: {deposit_token_balance_after} {silo_deposit_token}")
+                                        logger.info(f"Actual Pendle swap output: {deposit_amount} {silo_deposit_token}")
+                                        
+                                        if deposit_amount > 0.00001:
+                                            swap_success = True
+                                            logger.info(f"Pendle swap successful on attempt {i+1}: Got {deposit_amount} {silo_deposit_token}")
+                                            break
+                                        else:
+                                            logger.warning(f"Pendle swap output too small: {deposit_amount}")
+                                    else:
+                                        error_msg = swap_result.get("error", "Unknown error") if swap_result else "Empty swap result"
+                                        logger.warning(f"Pendle swap attempt {i+1} failed: {error_msg}")
+                                except Exception as swap_error:
+                                    logger.warning(f"Exception during Pendle swap attempt {i+1}: {str(swap_error)}")
                             
-                            # Check if swap was successful
-                            if swap_result and "error" not in swap_result:
-                                # Check deposit token balance after swap to calculate actual received amount
-                                deposit_token_balance_after_wei = deposit_token_contract.functions.balanceOf(sender).call()
-                                deposit_token_balance_after = deposit_token_balance_after_wei / (10 ** deposit_token_decimals)
-                                
-                                # Calculate the actual amount received based on balance difference
-                                deposit_amount = deposit_token_balance_after - deposit_token_balance_before
-                                
-                                # Round to avoid precision issues
-                                deposit_amount = float(f"{ceil_to_8_decimal(deposit_amount)}")
-                                
-                                logger.info(f"Balance after swap: {deposit_token_balance_after} {silo_deposit_token}")
-                                logger.info(f"Actual swap output: {deposit_amount} {silo_deposit_token}")
-                                
-                                if deposit_amount > 0.00001:  # Minimum threshold
-                                    swap_success = True
-                                    logger.info(f"Swap successful on attempt {i+1}: Got {deposit_amount} {silo_deposit_token}")
-                                    break
-                                else:
-                                    logger.warning(f"Swap output too small: {deposit_amount}")
-                            else:
-                                error_msg = swap_result.get("error", "Unknown error") if swap_result else "Empty swap result"
-                                logger.warning(f"Swap attempt {i+1} failed: {error_msg}")
                         except Exception as swap_error:
-                            logger.warning(f"Exception during swap attempt {i+1}: {str(swap_error)}")
+                            logger.warning(f"Exception during Pendle swap: {str(swap_error)}")
+                    else:
+                        # Use Sonic swap for regular tokens (existing logic)
+                        for i in range(10):  # Try up to 10 times with increasing slippage
+                            try:
+                                current_slippage = 0.5 + (i * 0.5)  # Start at 0.5% and increase by 0.5% each retry
+                                logger.info(f"Swap attempt {i+1} with slippage {current_slippage}%")
+                                
+                                swap_result = SonicSwapToolPrivy(self._agent, "")._run(
+                                    from_token=borrow_token if borrow_token.upper() != "S" else "wS",
+                                    to_token=silo_deposit_token if silo_deposit_token.upper() != "S" else "wS",
+                                    amount=borrow_amount,
+                                    sender=sender,
+                                    slippage=current_slippage  # Sonic uses percentage (0.5 = 0.5%)
+                                )
+                                
+                                # Check if swap was successful
+                                if swap_result and "error" not in swap_result:
+                                    # Check deposit token balance after swap to calculate actual received amount
+                                    deposit_token_balance_after_wei = deposit_token_contract.functions.balanceOf(sender).call()
+                                    deposit_token_balance_after = deposit_token_balance_after_wei / (10 ** deposit_token_decimals)
+                                    
+                                    # Calculate the actual amount received based on balance difference
+                                    deposit_amount = deposit_token_balance_after - deposit_token_balance_before
+                                    
+                                    # Round to avoid precision issues
+                                    deposit_amount = float(f"{ceil_to_8_decimal(deposit_amount)}")
+                                    
+                                    logger.info(f"Balance after swap: {deposit_token_balance_after} {silo_deposit_token}")
+                                    logger.info(f"Actual swap output: {deposit_amount} {silo_deposit_token}")
+                                    
+                                    if deposit_amount > 0.00001:  # Minimum threshold
+                                        swap_success = True
+                                        logger.info(f"Swap successful on attempt {i+1}: Got {deposit_amount} {silo_deposit_token}")
+                                        break
+                                    else:
+                                        logger.warning(f"Swap output too small: {deposit_amount}")
+                                else:
+                                    error_msg = swap_result.get("error", "Unknown error") if swap_result else "Empty swap result"
+                                    logger.warning(f"Swap attempt {i+1} failed: {error_msg}")
+                            except Exception as swap_error:
+                                logger.warning(f"Exception during swap attempt {i+1}: {str(swap_error)}")
                     
                     # Check if all swap attempts failed
                     if not swap_success:
@@ -604,7 +768,9 @@ class SiloLoopingStrategyToolPrivy(SiloLoopingStrategyTool):
                 "type": "silo_loop_strategy",
                 "deposit_token": {
                     "original": deposit_token,  # Original deposit token specified by user
-                    "silo": silo_deposit_token if silo_deposit_token.upper() != "S" else "wS"  # Actual token deposited in Silo (might be wS)
+                    "silo": silo_deposit_token if silo_deposit_token.upper() != "S" else "wS",  # Actual token deposited in Silo (might be wS)
+                    "is_pt_token": is_pt_token,
+                    "pt_market": pt_market if is_pt_token else None
                 },
                 "token_pair": f"{silo_deposit_token}/{borrow_token}",
                 "initial_amount": float(f"{ceil_to_8_decimal(initial_amount)}"),
@@ -620,6 +786,7 @@ class SiloLoopingStrategyToolPrivy(SiloLoopingStrategyTool):
             if swapped:
                 result["token_conversion"] = {
                     "type": "swap",
+                    "method": "pendle" if is_pt_token else "sonic",
                     "from_token": deposit_token,
                     "to_token": silo_deposit_token if silo_deposit_token.upper() != "S" else "wS",
                     "original_amount": initial_amount,
@@ -828,12 +995,28 @@ class SiloExitStrategyToolPrivy:
             # Get the tokens used in Silo
             silo_deposit_token = tokens[0].strip()
             borrow_token = tokens[1].strip()
+            
+            # Check if we're dealing with a PT token
+            is_pt_token = strategy_data.get("deposit_token", {}).get("is_pt_token", False)
+            pt_market = strategy_data.get("deposit_token", {}).get("pt_market")
+            
+            if is_pt_token and not pt_market:
+                # Try to extract market from token name if not provided
+                if silo_deposit_token.startswith("PT-"):
+                    if "(" in silo_deposit_token:
+                        pt_market = silo_deposit_token.split('-')[1].split('(')[0].strip()
+                    else:
+                        pt_market = silo_deposit_token.split('-')[1].strip()
+                    
+                    logger.info(f"Extracted PT market: {pt_market} from {silo_deposit_token}")
+            
             total_borrowed = float(strategy_data["total_borrowed"])
             total_deposited = float(strategy_data["total_deposited"])
             
             logger.info(f"Unwinding Silo strategy for {token_pair}")
             logger.info(f"Original deposit token: {original_deposit_token}")
             logger.info(f"Silo deposit token: {silo_deposit_token}")
+            logger.info(f"Is PT token: {is_pt_token}, PT market: {pt_market}")
             logger.info(f"Total borrowed: {total_borrowed} {borrow_token}")
             logger.info(f"Total deposited: {total_deposited} {silo_deposit_token}")
             
@@ -1079,54 +1262,111 @@ class SiloExitStrategyToolPrivy:
                     borrow_token_balance_before = float(f"{ceil_to_8_decimal(borrow_token_balance_before)}")
                     logger.info(f"Balance before swap: {borrow_token_balance_before} {borrow_token}")
                     
-                    # Use retry mechanism for swap
+                    # Use appropriate swap mechanism based on token type
                     swap_success = False
-                    for i in range(10):  # Try up to 3 times with increasing slippage
-                        try:
-                            current_slippage = swap_slippage + (i * 0.5)  # Increase slippage each retry
-                            logger.info(f"Swap attempt {i+1} with slippage {current_slippage}%")
-                            
-                            swap_result = SonicSwapToolPrivy(self._agent, self._llm)._run(
-                                from_token=silo_deposit_token if silo_deposit_token.upper() != "S" else "wS",
-                                to_token=borrow_token if borrow_token.upper() != "S" else "wS",
-                                amount=swap_amount,
-                                sender=sender,
-                                slippage=current_slippage
-                            )
-                            
-                            if swap_result and "error" not in swap_result:
-                                # Check balance after swap to calculate actual received amount
-                                borrow_token_balance_after_wei = borrow_token_contract.functions.balanceOf(sender).call()
-                                borrow_token_balance_after = borrow_token_balance_after_wei / (10 ** borrow_token_decimals)
+                    
+                    if is_pt_token:
+                        # Use Pendle swap for PT tokens with retry logic
+                        for i in range(5):  # Try up to 5 times with increasing slippage
+                            try:
+                                current_slippage = 0.01 + (i * 0.005)  # Increase slippage each retry (0.01 scale)
+                                logger.info(f"Pendle swap attempt {i+1} with slippage {current_slippage}")
                                 
-                                # Calculate the actual amount received based on balance difference
-                                received_amount = borrow_token_balance_after - borrow_token_balance_before
-                                # Round to avoid precision issues
-                                received_amount = float(f"{ceil_to_8_decimal(received_amount)}")
+                                swap_result = PendleSwapToolPrivy(self._agent)._run(
+                                    market_symbol=pt_market,
+                                    token_in_symbol="PT",
+                                    token_out_symbol=borrow_token,
+                                    amount_in=str(swap_amount),
+                                    user_address=sender,
+                                    slippage=current_slippage  # Pendle uses 0-1 scale (0.01 = 1%)
+                                )
                                 
-                                logger.info(f"Balance after swap: {borrow_token_balance_after} {borrow_token}")
-                                logger.info(f"Actual swap output: {received_amount} {borrow_token}")
+                                if isinstance(swap_result, str):
+                                    try:
+                                        swap_result = json.loads(swap_result)
+                                    except:
+                                        pass
                                 
-                                if received_amount > 0.00001:  # Ensure we received a meaningful amount
-                                    swap_success = True
-                                    logger.info(f"Swap successful on attempt {i+1}: Got {received_amount} {borrow_token}")
+                                if "error" not in swap_result and swap_result.get("success", False):
+                                    # Check balance after Pendle swap
+                                    borrow_token_balance_after_wei = borrow_token_contract.functions.balanceOf(sender).call()
+                                    borrow_token_balance_after = borrow_token_balance_after_wei / (10 ** borrow_token_decimals)
                                     
-                                    step_result["actions"].append({
-                                        "type": "swap",
-                                        "amount": swap_amount,
-                                        "received": received_amount,
-                                        "attempt": i+1,
-                                        "slippage": current_slippage,
-                                        "tx_hash": swap_result.get("tx")
-                                    })
-                                    break
+                                    # Calculate received amount
+                                    received_amount = borrow_token_balance_after - borrow_token_balance_before
+                                    received_amount = float(f"{ceil_to_8_decimal(received_amount)}")
+                                    
+                                    logger.info(f"Balance after Pendle swap: {borrow_token_balance_after} {borrow_token}")
+                                    logger.info(f"Actual Pendle swap output: {received_amount} {borrow_token}")
+                                    
+                                    if received_amount > 0.00001:
+                                        swap_success = True
+                                        logger.info(f"Pendle swap successful on attempt {i+1}: Got {received_amount} {borrow_token}")
+                                        
+                                        step_result["actions"].append({
+                                            "type": "pendle_swap",
+                                            "amount": swap_amount,
+                                            "received": received_amount,
+                                            "attempt": i+1,
+                                            "slippage": current_slippage,
+                                            "tx_hash": swap_result.get("tx_hash")
+                                        })
+                                        break
+                                    else:
+                                        logger.warning(f"Pendle swap output too small: {received_amount}")
                                 else:
-                                    logger.warning(f"Received amount too small: {received_amount}")
-                            else:
-                                error_msg = swap_result.get("error", "Unknown error") if swap_result else "Empty swap result"
-                                logger.warning(f"Swap attempt {i+1} failed: {error_msg}")
-                        except Exception as swap_error:
-                            logger.warning(f"Exception during swap attempt {i+1}: {str(swap_error)}")
+                                    error_msg = swap_result.get("error", "Unknown error") if swap_result else "Empty swap result"
+                                    logger.warning(f"Pendle swap attempt {i+1} failed: {error_msg}")
+                            except Exception as swap_error:
+                                logger.warning(f"Exception during Pendle swap attempt {i+1}: {str(swap_error)}")
+                    else:
+                        # Use Sonic swap for regular tokens (existing logic)
+                        for i in range(10):
+                            try:
+                                current_slippage = swap_slippage + (i * 0.5)  # Increase slippage each retry
+                                logger.info(f"Swap attempt {i+1} with slippage {current_slippage}%")
+                                
+                                swap_result = SonicSwapToolPrivy(self._agent, self._llm)._run(
+                                    from_token=silo_deposit_token if silo_deposit_token.upper() != "S" else "wS",
+                                    to_token=borrow_token if borrow_token.upper() != "S" else "wS",
+                                    amount=swap_amount,
+                                    sender=sender,
+                                    slippage=current_slippage  # Sonic uses percentage (0.5 = 0.5%)
+                                )
+                                
+                                if swap_result and "error" not in swap_result:
+                                    # Check balance after swap to calculate actual received amount
+                                    borrow_token_balance_after_wei = borrow_token_contract.functions.balanceOf(sender).call()
+                                    borrow_token_balance_after = borrow_token_balance_after_wei / (10 ** borrow_token_decimals)
+                                    
+                                    # Calculate the actual amount received based on balance difference
+                                    received_amount = borrow_token_balance_after - borrow_token_balance_before
+                                    # Round to avoid precision issues
+                                    received_amount = float(f"{ceil_to_8_decimal(received_amount)}")
+                                    
+                                    logger.info(f"Balance after swap: {borrow_token_balance_after} {borrow_token}")
+                                    logger.info(f"Actual swap output: {received_amount} {borrow_token}")
+                                    
+                                    if received_amount > 0.00001:  # Ensure we received a meaningful amount
+                                        swap_success = True
+                                        logger.info(f"Swap successful on attempt {i+1}: Got {received_amount} {borrow_token}")
+                                        
+                                        step_result["actions"].append({
+                                            "type": "swap",
+                                            "amount": swap_amount,
+                                            "received": received_amount,
+                                            "attempt": i+1,
+                                            "slippage": current_slippage,
+                                            "tx_hash": swap_result.get("tx")
+                                        })
+                                        break
+                                    else:
+                                        logger.warning(f"Received amount too small: {received_amount}")
+                                else:
+                                    error_msg = swap_result.get("error", "Unknown error") if swap_result else "Empty swap result"
+                                    logger.warning(f"Swap attempt {i+1} failed: {error_msg}")
+                            except Exception as swap_error:
+                                logger.warning(f"Exception during swap attempt {i+1}: {str(swap_error)}")
                     
                     if not swap_success:
                         logger.warning("All swap attempts failed")
@@ -1236,48 +1476,114 @@ class SiloExitStrategyToolPrivy:
                 logger.info(f"Net changes in wallet balances - {silo_deposit_token}: {net_deposit_token_balance}, {borrow_token}: {net_borrow_token_balance}")
                 
                 final_swaps = []
-                # Perform swaps to original deposit token if it's different from silo_deposit_token or borrow_token
+                # Perform swaps to original deposit token if needed
                 if original_deposit_token.upper() not in [silo_deposit_token.upper(), borrow_token.upper()]:
-                    # Swap deposit token gains to original token if we have any
-                    if net_deposit_token_balance > 0.001:
-                        logger.info(f"Swapping {net_deposit_token_balance} {silo_deposit_token} to {original_deposit_token}")
-                        swap_result = SonicSwapToolPrivy(self._agent, self._llm)._run(
-                            from_token=silo_deposit_token if silo_deposit_token.upper() != "S" else "wS",
-                            to_token=original_deposit_token if original_deposit_token.upper() != "S" else "wS",
-                            amount=net_deposit_token_balance,
-                            sender=sender,
-                            slippage=swap_slippage
-                        )
-                        
-                        if "error" not in swap_result:
-                            final_swaps.append({
-                                "from_token": silo_deposit_token,
-                                "to_token": original_deposit_token,
-                                "amount": net_deposit_token_balance,
-                                "received": swap_result.get("amount_out", 0),
-                                "tx_hash": swap_result.get("tx")
-                            })
+                    # If we have PT token and need to swap to original token
+                    if is_pt_token and net_deposit_token_balance > 0.001:
+                        logger.info(f"Swapping PT token {net_deposit_token_balance} {silo_deposit_token} to {original_deposit_token}")
+                        for i in range(5):  # Try up to 5 times with increasing slippage
+                            try:
+                                current_slippage = 0.01 + (i * 0.005)  # Increase slippage each retry (0.01 scale)
+                                logger.info(f"Final Pendle swap attempt {i+1} with slippage {current_slippage}")
+                                
+                                swap_result = PendleSwapToolPrivy(self._agent)._run(
+                                    market_symbol=pt_market,
+                                    token_in_symbol="PT",
+                                    token_out_symbol=original_deposit_token,
+                                    amount_in=str(net_deposit_token_balance),
+                                    user_address=sender,
+                                    slippage=current_slippage  # Pendle uses 0-1 scale (0.01 = 1%)
+                                )
+                                
+                                if isinstance(swap_result, str):
+                                    try:
+                                        swap_result = json.loads(swap_result)
+                                    except:
+                                        pass
+                                
+                                if "error" not in swap_result and swap_result.get("success", False):
+                                    final_swaps.append({
+                                        "type": "pendle",
+                                        "from_token": silo_deposit_token,
+                                        "to_token": original_deposit_token,
+                                        "amount": net_deposit_token_balance,
+                                        "received": float(swap_result.get("amount_out", 0)),
+                                        "attempt": i+1,
+                                        "slippage": current_slippage,
+                                        "tx_hash": swap_result.get("tx_hash")
+                                    })
+                                    break
+                                else:
+                                    error_msg = swap_result.get("error", "Unknown error") if swap_result else "Empty swap result"
+                                    logger.warning(f"Final Pendle swap attempt {i+1} failed: {error_msg}")
+                            except Exception as swap_error:
+                                logger.warning(f"Exception during final Pendle swap attempt {i+1}: {str(swap_error)}")
+                    # Swap deposit token gains using Sonic (non-PT) with retry logic
+                    elif not is_pt_token and net_deposit_token_balance > 0.001:
+                        for i in range(5):  # Try up to 5 times with increasing slippage
+                            try:
+                                current_slippage = swap_slippage + (i * 0.5)  # Increase slippage each retry
+                                logger.info(f"Final deposit token swap attempt {i+1} with slippage {current_slippage}%")
+                                
+                                swap_result = SonicSwapToolPrivy(self._agent, self._llm)._run(
+                                    from_token=silo_deposit_token if silo_deposit_token.upper() != "S" else "wS",
+                                    to_token=original_deposit_token if original_deposit_token.upper() != "S" else "wS",
+                                    amount=net_deposit_token_balance,
+                                    sender=sender,
+                                    slippage=current_slippage  # Sonic uses percentage (0.5 = 0.5%)
+                                )
+                                
+                                if "error" not in swap_result and swap_result.get("success", False):
+                                    final_swaps.append({
+                                        "type": "sonic",
+                                        "from_token": silo_deposit_token,
+                                        "to_token": original_deposit_token,
+                                        "amount": net_deposit_token_balance,
+                                        "received": swap_result.get("amount_out", 0),
+                                        "attempt": i+1,
+                                        "slippage": current_slippage,
+                                        "tx_hash": swap_result.get("tx")
+                                    })
+                                    break
+                                else:
+                                    error_msg = swap_result.get("error", "Unknown error") if swap_result else "Empty swap result"
+                                    logger.warning(f"Final deposit token swap attempt {i+1} failed: {error_msg}")
+                            except Exception as swap_error:
+                                logger.warning(f"Exception during final deposit token swap attempt {i+1}: {str(swap_error)}")
                     
                     # Swap borrow token gains to original token if we have any
                     if net_borrow_token_balance > 0.001:
-                        logger.info(f"Swapping {net_borrow_token_balance} {borrow_token} to {original_deposit_token}")
-                        swap_result = SonicSwapToolPrivy(self._agent, self._llm)._run(
-                            from_token=borrow_token if borrow_token.upper() != "S" else "wS",
-                            to_token=original_deposit_token if original_deposit_token.upper() != "S" else "wS",
-                            amount=net_borrow_token_balance,
-                            sender=sender,
-                            slippage=swap_slippage
-                        )
-                        
-                        if "error" not in swap_result:
-                            final_swaps.append({
-                                "from_token": borrow_token,
-                                "to_token": original_deposit_token,
-                                "amount": net_borrow_token_balance,
-                                "received": swap_result.get("amount_out", 0),
-                                "tx_hash": swap_result.get("tx")
-                            })
-                
+                        for i in range(5):  # Try up to 5 times with increasing slippage
+                            try:
+                                current_slippage = swap_slippage + (i * 0.5)  # Increase slippage each retry
+                                logger.info(f"Final borrow token swap attempt {i+1} with slippage {current_slippage}%")
+                                
+                                swap_result = SonicSwapToolPrivy(self._agent, self._llm)._run(
+                                    from_token=borrow_token if borrow_token.upper() != "S" else "wS",
+                                    to_token=original_deposit_token if original_deposit_token.upper() != "S" else "wS",
+                                    amount=net_borrow_token_balance,
+                                    sender=sender,
+                                    slippage=current_slippage  # Sonic uses percentage (0.5 = 0.5%)
+                                )
+                                
+                                if "error" not in swap_result and swap_result.get("success", False):
+                                    final_swaps.append({
+                                        "type": "sonic",
+                                        "from_token": borrow_token,
+                                        "to_token": original_deposit_token,
+                                        "amount": net_borrow_token_balance,
+                                        "received": swap_result.get("amount_out", 0),
+                                        "attempt": i+1,
+                                        "slippage": current_slippage,
+                                        "tx_hash": swap_result.get("tx")
+                                    })
+                                    break
+                                else:
+                                    error_msg = swap_result.get("error", "Unknown error") if swap_result else "Empty swap result"
+                                    logger.warning(f"Final borrow token swap attempt {i+1} failed: {error_msg}")
+                            except Exception as swap_error:
+                                logger.warning(f"Exception during final borrow token swap attempt {i+1}: {str(swap_error)}")
+
                 # If the original deposit token is same as silo_deposit_token
                 elif original_deposit_token.upper() == silo_deposit_token.upper():
                     # Just swap borrow token balance if we have any
@@ -1357,27 +1663,38 @@ class SiloExitStrategyToolPrivy:
                     "claim_rewards_tx": claim_rewards_result.get("tx_hash")
                 }
                 
-
-                # Add original deposit token information
-                need_conversion = False
-                if original_deposit_token.upper() != silo_deposit_token.upper():
-                    # If the original deposit token is S but we have wS
-                    if original_deposit_token.upper() == "S" and silo_deposit_token.upper() == "S":
-                        result["final_state"]["note"] = "Your original deposit was in S but you received wS. To convert back to S, you would need to use the unwrap function which is not available through this tool."
-                        need_conversion = True
-                    # If the original deposit token is different from the silo deposit token
-                    elif len(final_swaps) == 0:  # Only add this note if we couldn't swap back automatically
-                        result["final_state"]["note"] = f"Your original deposit was in {original_deposit_token} but you received {silo_deposit_token}. To convert back, you would need to swap."
-                        need_conversion = True
-                
-                # Add token conversion details
-                result["token_info"] = {
-                    "original_deposit_token": original_deposit_token,
-                    "silo_deposit_token": silo_deposit_token,
-                    "borrow_token": borrow_token,
-                    "needs_conversion": need_conversion,
-                    "auto_converted": len(final_swaps) > 0
-                }
+                # Add PT token information
+                if is_pt_token:
+                    result["token_info"] = {
+                        "original_deposit_token": original_deposit_token,
+                        "silo_deposit_token": silo_deposit_token,
+                        "borrow_token": borrow_token,
+                        "is_pt_token": True,
+                        "pt_market": pt_market,
+                        "needs_conversion": len(final_swaps) == 0 and original_deposit_token.upper() != silo_deposit_token.upper(),
+                        "auto_converted": len(final_swaps) > 0
+                    }
+                else:
+                    # Add original deposit token information (non-PT)
+                    need_conversion = False
+                    if original_deposit_token.upper() != silo_deposit_token.upper():
+                        # If the original deposit token is S but we have wS
+                        if original_deposit_token.upper() == "S" and silo_deposit_token.upper() == "S":
+                            result["final_state"]["note"] = "Your original deposit was in S but you received wS. To convert back to S, you would need to use the unwrap function which is not available through this tool."
+                            need_conversion = True
+                        # If the original deposit token is different from the silo deposit token
+                        elif len(final_swaps) == 0:  # Only add this note if we couldn't swap back automatically
+                            result["final_state"]["note"] = f"Your original deposit was in {original_deposit_token} but you received {silo_deposit_token}. To convert back, you would need to swap."
+                            need_conversion = True
+                    
+                    # Add token conversion details
+                    result["token_info"] = {
+                        "original_deposit_token": original_deposit_token,
+                        "silo_deposit_token": silo_deposit_token,
+                        "borrow_token": borrow_token,
+                        "needs_conversion": need_conversion,
+                        "auto_converted": len(final_swaps) > 0
+                    }
                 
                 return json.dumps(result, indent=2)
                 
